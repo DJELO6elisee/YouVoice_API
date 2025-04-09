@@ -1,3 +1,4 @@
+// models/user.js
 'use strict';
 const { Model, DataTypes } = require('sequelize');
 
@@ -26,30 +27,31 @@ module.exports = (sequelize) => {
         foreignKey: 'user_id',
         as: 'shares',
       });
-      User.hasMany(models.Report, {
+      User.hasMany(models.Report, { // Assurez-vous que le modèle Report existe
         foreignKey: 'user_id',
-        as: 'reports',
+        as: 'reports', // Signalements faits par cet utilisateur
       });
+       // Si un Report peut concerner un User (ex: signaler un utilisateur)
+       // User.hasMany(models.Report, { foreignKey: 'reported_user_id', as: 'reportedAgainst' });
     }
   }
   User.init({
+    // --- Champs Existants ---
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
       allowNull: false,
     },
-    // Champ existant, peut-être moins utilisé si fullName est privilégié pour l'affichage
     username: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true,
     },
-    // NOUVEAU: Nom complet de l'utilisateur
     fullName: {
       type: DataTypes.STRING,
-      allowNull: true, // Ou false si vous voulez le rendre obligatoire
-      field: 'full_name', // Nom explicite en snake_case pour la BDD (optionnel si underscored: true)
+      allowNull: true,
+      field: 'full_name',
     },
     email: {
       type: DataTypes.STRING,
@@ -64,34 +66,48 @@ module.exports = (sequelize) => {
       allowNull: false,
     },
     avatar: {
-      type: DataTypes.STRING, // URL ou chemin du fichier
+      type: DataTypes.STRING,
       allowNull: true,
-      validate: {
-         // isUrl: true, // Décommentez si vous stockez toujours des URL complètes
-      },
     },
     bio: {
       type: DataTypes.TEXT,
       allowNull: true,
     },
-    // NOUVEAU: Genre de l'utilisateur
     genre: {
-      // Utilisation de ENUM pour restreindre les valeurs possibles
       type: DataTypes.ENUM('homme', 'femme', 'autre', 'prefer_not_say'),
-      allowNull: true, // Permettre de ne pas spécifier
+      allowNull: true,
     },
-    // NOUVEAU: Pays de l'utilisateur
     pays: {
-      type: DataTypes.STRING, // Ou potentiellement un code pays (ex: FR, US, CI)
-      allowNull: true, // Permettre de ne pas spécifier
+      type: DataTypes.STRING,
+      allowNull: true,
     },
-    // createdAt et updatedAt sont gérés automatiquement par Sequelize
+
+    // ====> CHAMPS AJOUTÉS (Maintenant à l'intérieur de l'objet init) <====
+    isAdmin: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false, // Très important pour la sécurité
+      field: 'is_admin',   // Nom de colonne snake_case
+    },
+    isActive: {
+     type: DataTypes.BOOLEAN,
+     allowNull: false,
+     defaultValue: true, // Actif par défaut
+     field: 'is_active',   // Nom de colonne snake_case
+   },
+   // ====> FIN DES CHAMPS AJOUTÉS <====
+
+    // createdAt et updatedAt sont ajoutés automatiquement par timestamps: true
+    // mais sont définis implicitement avec les colonnes created_at et updated_at
+    // à cause de underscored: true
+
   }, {
-    sequelize,
-    modelName: 'User',
-    tableName: 'users',
-    timestamps: true,
-    underscored: true, // Important: ceci transforme fullName en full_name, nickName en nick_name etc. dans la BDD
+    // Options du modèle
+    sequelize,          // Instance Sequelize
+    modelName: 'User',  // Nom du modèle en CamelCase
+    tableName: 'users', // Nom de la table en snake_case
+    timestamps: true,   // Ajoute createdAt et updatedAt
+    underscored: true,  // Utilise snake_case pour les clés étrangères et les noms de champs (ex: isAdmin -> is_admin)
   });
   return User;
 };

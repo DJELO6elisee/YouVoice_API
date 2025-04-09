@@ -1,120 +1,149 @@
+// controllers/reportController.js (Adapté pour snake_case)
 'use strict';
 
-// Importer les modèles nécessaires (ajout de User)
-const { Report, VoiceNote, User } = require('../models'); 
-const { Op } = require('sequelize'); // Importer Op pour les requêtes plus complexes si besoin
+// Importer les modèles nécessaires
+const { Report, VoiceNote, User, Sequelize } = require('../models'); // Ajout Sequelize pour Op
+const Op = Sequelize.Op;
 
 // === Créer un nouveau signalement ===
 exports.createReport = async (req, res, next) => {
+  console.log("[CreateReport] Request received. Body:", req.body, "User:", req.user?.id);
   try {
     const { voiceNoteId, reason } = req.body;
-    const reporterId = req.user.id; // ID de l'utilisateur qui signale
+    const userId = req.user?.id; // ID de l'utilisateur qui signale
 
-    // TODO (Recommandation): Valider les entrées (présence/longueur de reason, format voiceNoteId)
-
-    if (!reason || reason.trim().length < 10) { // Exemple de validation simple
-        return res.status(400).json({ status: 'fail', message: 'La raison du signalement doit contenir au moins 10 caractères.' });
+    // --- Validations ---
+    if (!userId) {
+        return res.status(401).json({ status: 'fail', message: 'Authentification requise.' });
     }
     if (!voiceNoteId) {
-        return res.status(400).json({ status: 'fail', message: 'L\'ID de la note vocale est requis.' });
+        return res.status(400).json({ status: 'fail', message: 'L\'ID de la note vocale est requis (voiceNoteId).' });
+    }
+    if (!reason || reason.trim().length < 5) { // Minimum 5 caractères pour la raison
+        return res.status(400).json({ status: 'fail', message: 'La raison du signalement doit contenir au moins 5 caractères.' });
     }
 
     // Vérifier si la VoiceNote existe
-    const voiceNote = await VoiceNote.findByPk(voiceNoteId);
+    const voiceNote = await VoiceNote.findByPk(voiceNoteId, { attributes: ['id'] }); // Léger
     if (!voiceNote) {
       return res.status(404).json({ status: 'fail', message: 'La note vocale spécifiée n\'existe pas.' });
     }
 
-    // Correction: Utiliser reporterId pour vérifier les doublons
+    // Vérifier si cet utilisateur a déjà signalé cette note (et que ce n'est pas rejeté)
     const existingReport = await Report.findOne({
-      where: { 
-        reporterId: reporterId, 
-        voiceNoteId: voiceNoteId,
-        status: { [Op.ne]: 'rejected' } // Optionnel: Autoriser un nouveau rapport si le précédent a été rejeté ? À discuter.
+      where: {
+        user_id: userId,          // Utilisation de user_id
+        voice_note_id: voiceNoteId, // Utilisation de voice_note_id
+        status: { [Op.ne]: 'rejected' } // Ne pas re-signaler si déjà traité sauf si rejeté
       }
     });
 
     if (existingReport) {
-      return res.status(409).json({ status: 'fail', message: 'Vous avez déjà signalé cette note vocale.' }); // 409 Conflict est plus approprié
+      // Message plus informatif
+      return res.status(409).json({ status: 'fail', message: `Vous avez déjà un signalement ${existingReport.status === 'pending' ? 'en attente' : 'existant'} pour cette note.` });
     }
 
-    // Correction: Utiliser reporterId lors de la création
+    // Créer le signalement en utilisant les noms de colonnes snake_case
     const report = await Report.create({
-      reporterId: reporterId, // Utiliser reporterId
-      voiceNoteId: voiceNoteId,
+      user_id: userId,          // Correspond à la colonne DB
+      voice_note_id: voiceNoteId, // Correspond à la colonne DB
       reason: reason,
-      // Le statut par défaut 'pending' sera appliqué par le modèle
+      // 'status' prendra sa valeur par défaut ('pending') définie dans le modèle
     });
+    console.log(`[CreateReport] Report created with ID: ${report.id}`);
 
-    // Optionnel: Recharger pour inclure des infos si besoin, sinon renvoyer direct
-    // const reportWithDetails = await Report.findByPk(report.id, { include: [...] });
-
+    // Pas besoin de recharger ici, on renvoie juste le succès
     res.status(201).json({
         status: 'success',
+        message: 'Signalement enregistré avec succès.', // Ajouter un message
         data: {
-            report // Renvoyer le rapport créé
+            report: report.toJSON() // Renvoyer le rapport créé (toJSON est une bonne pratique)
         }
     });
   } catch (error) {
+     console.error("[CreateReport] Error:", error);
      if (error.name === 'SequelizeValidationError') {
          return res.status(400).json({ status: 'fail', message: error.errors.map(e => e.message).join(', ') });
+     }
+     // Gérer spécifiquement les erreurs de clé étrangère si besoin
+     if (error.name === 'SequelizeForeignKeyConstraintError') {
+        console.error("[CreateReport] ForeignKey Constraint Error:", error.parent?.sqlMessage || error.message);
+        return res.status(400).json({ status: 'fail', message: 'ID utilisateur ou note vocale invalide.' });
      }
     next(error); // Gestion globale
   }
 };
 
+
+
+
+
+
+
+
 // === Obtenir la liste des signalements (Admin) ===
 exports.getReports = async (req, res, next) => {
+  console.log("[getReports] Admin request received. Query:", req.query);
   try {
-    // Vérifier si l'utilisateur est admin
-    if (!req.user || !req.user.isAdmin) {
-      return res.status(403).json({ status: 'fail', message: 'Accès non autorisé. Réservé aux administrateurs.' });
-    }
+    // La vérification isAdmin est faite par le middleware sur la route
 
-    const { status, page = 1, limit = 10 } = req.query; // Ajout de pagination simple
+    const { status, page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC' } = req.query; // Ajout tri
     const where = {};
-    
-    // Filtrage par statut (s'assurer que le statut est valide)
-    const validStatuses = ['pending', 'under_review', 'resolved', 'rejected'];
+
+    // Filtrage par statut
+    const validStatuses = Report.getAttributes().status.values; // Récupère les ENUM du modèle
     if (status && validStatuses.includes(status)) {
       where.status = status;
     } else if (status) {
-        return res.status(400).json({ status: 'fail', message: `Statut de filtre invalide: ${status}. Utilisez l'un des suivants: ${validStatuses.join(', ')}` });
+        return res.status(400).json({ status: 'fail', message: `Statut de filtre invalide: ${status}.` });
     }
 
-    // Calcul de l'offset pour la pagination
+    // Options de tri
+    const orderClause = [];
+    // Mappage des noms de tri frontend vers les noms de colonnes DB/modèle
+    const sortMapping = { createdAt: 'created_at', status: 'status' };
+    const sortField = sortMapping[sortBy] || 'created_at'; // Défaut à created_at
+    const sortDirection = ['ASC', 'DESC'].includes(order.toUpperCase()) ? order.toUpperCase() : 'DESC';
+    orderClause.push([sortField, sortDirection]);
+    // Ajouter un tri secondaire par ID pour la stabilité
+    if (sortField !== 'id') {
+        orderClause.push(['id', 'DESC']);
+    }
+
+
+    // Calcul de l'offset
     const offset = (page - 1) * limit;
 
-    // Récupérer les signalements avec les détails associés et pagination
+    // Récupérer les signalements avec pagination, tri et détails associés
     const { count, rows: reports } = await Report.findAndCountAll({
       where,
       include: [
-        { 
-          model: User, 
-          as: 'reporter', // Alias correct
-          attributes: ['id', 'username', 'avatar', 'email'] // Ajouter email si utile pour l'admin
+        {
+          model: User,
+          as: 'reporter', // Vérifier cet alias dans Report.associate
+          attributes: ['id', 'username', 'avatar'] // Exclure email si non nécessaire
         },
-        { 
-          model: VoiceNote, 
-          as: 'reportedVoiceNote', // Correction: Alias correct
-          include: [ // Include imbriqué
-            { 
-              model: User, 
-              as: 'creator', // Correction: Alias correct pour le créateur de la note
-              attributes: ['id', 'username', 'avatar', 'email'] // Ajouter email si utile pour l'admin
+        {
+          model: VoiceNote,
+          as: 'reportedVoiceNote', // Vérifier cet alias
+          attributes: ['id', 'description', 'audio_url', 'user_id'], // Ajouter user_id de la note
+          required: false, // Garder le rapport même si la note a été supprimée ? (ou mettre true pour exclure)
+          include: [ // Inclure le créateur de la note signalée
+            {
+              model: User,
+              as: 'user', // Vérifier l'alias User dans VoiceNote.associate
+              attributes: ['id', 'username', 'avatar']
             }
           ]
         },
-        {
-            model: User,
-            as: 'resolvedBy', // Inclure l'admin qui a résolu (peut être null)
-            attributes: ['id', 'username']
-        }
+        // Inclure d'autres éléments si nécessaire (ex: Comment si on signale des commentaires)
       ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit, 10), // Convertir en nombre
-      offset: parseInt(offset, 10) // Convertir en nombre
+      order: orderClause, // Appliquer le tri
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+      distinct: true // Peut être nécessaire avec include hasMany
     });
+     console.log(`[getReports] Found ${count} reports, returning ${reports.length} for page ${page}.`);
 
     res.status(200).json({
       status: 'success',
@@ -123,77 +152,84 @@ exports.getReports = async (req, res, next) => {
       totalPages: Math.ceil(count / limit),
       currentPage: parseInt(page, 10),
       data: {
-        reports 
+        reports: reports.map(r => r.toJSON()) // Utiliser toJSON()
       }
     });
   } catch (error) {
+    console.error("[getReports] Error:", error);
     next(error);
   }
 };
 
+
 // === Mettre à jour un signalement (Admin) ===
 exports.updateReport = async (req, res, next) => {
+   const reportId = req.params.id; // ID du rapport
+   const adminUserId = req.user.id; // ID de l'admin
+   const { status, resolution } = req.body; // Nouvelles valeurs
+   console.log(`[updateReport] Admin ${adminUserId} updating report ${reportId}. Body:`, req.body);
+
   try {
-    // Vérifier si l'utilisateur est admin
-    if (!req.user || !req.user.isAdmin) {
-      return res.status(403).json({ status: 'fail', message: 'Accès non autorisé. Réservé aux administrateurs.' });
-    }
+    // La vérification isAdmin est faite par le middleware
 
-    const { status, resolution } = req.body;
-    const { id } = req.params; // ID du rapport à mettre à jour
-
-    // Valider le statut fourni
-    const validStatuses = ['pending', 'under_review', 'resolved', 'rejected'];
+    // Valider le statut fourni (récupère les valeurs ENUM du modèle)
+    const validStatuses = Report.getAttributes().status.values;
     if (status && !validStatuses.includes(status)) {
-        return res.status(400).json({ status: 'fail', message: `Statut invalide: ${status}. Utilisez l'un des suivants: ${validStatuses.join(', ')}` });
+        return res.status(400).json({ status: 'fail', message: `Statut invalide: ${status}.` });
     }
     // Valider la résolution si le statut est final
-    if (['resolved', 'rejected'].includes(status) && (!resolution || resolution.trim() === '')) {
-        return res.status(400).json({ status: 'fail', message: 'Une résolution est requise lorsque le statut est "resolved" ou "rejected".' });
+    if (['resolved', 'rejected'].includes(status) && (!resolution || String(resolution).trim() === '')) {
+        return res.status(400).json({ status: 'fail', message: 'Une note de résolution est requise pour ce statut.' });
     }
 
-
-    // Trouver le rapport à mettre à jour
-    const report = await Report.findByPk(id);
-
-    if (!report) {
-      return res.status(404).json({ status: 'fail', message: 'Signalement non trouvé.' });
-    }
+    // Trouver le rapport
+    const report = await Report.findByPk(reportId);
+    if (!report) { return res.status(404).json({ status: 'fail', message: 'Signalement non trouvé.' }); }
 
     // Préparer les données de mise à jour
     const updateData = {};
-    if (status) {
-        updateData.status = status;
-    }
-    if (resolution !== undefined) { // Permettre de mettre à jour/vider la résolution
-        updateData.resolution = resolution;
-    }
+    if (status) updateData.status = status;
+    // Mettre à jour 'resolution' seulement s'il est fourni (permet de l'effacer avec null ou "")
+    if (resolution !== undefined) updateData.resolution = resolution;
 
-    // Si le statut est mis à jour vers un état final, enregistrer qui l'a fait et quand
+    // Si le statut change vers un état final, enregistrer l'admin et la date
+    // Utiliser les noms de colonnes snake_case
     if (['resolved', 'rejected'].includes(status) && report.status !== status) {
-        updateData.resolvedById = req.user.id; // ID de l'admin actuel
-        updateData.resolvedAt = new Date();   // Date/heure actuelle
+        updateData.resolved_by_id = adminUserId; // Nom de colonne DB
+        updateData.resolved_at = new Date();   // Nom de colonne DB
     }
 
     // Effectuer la mise à jour
-    await report.update(updateData);
+    const [numberOfAffectedRows] = await Report.update(updateData, {
+        where: { id: reportId },
+        // returning: true, // Peut être utile avec certains dialectes pour récupérer l'objet mis à jour
+    });
 
-    // Recharger le rapport avec les associations pour la réponse (optionnel mais propre)
-     const updatedReport = await Report.findByPk(id, {
-         include: [
+    if (numberOfAffectedRows === 0) {
+         // Ne devrait pas arriver si findByPk a fonctionné, mais sécurité
+         return res.status(404).json({ status: 'fail', message: 'Signalement non trouvé lors de la mise à jour.' });
+    }
+
+    console.log(`[updateReport] Report ${reportId} updated.`);
+
+    // Recharger le rapport mis à jour pour la réponse
+     const updatedReport = await Report.findByPk(reportId, {
+         include: [ // Inclure les mêmes associations que getReports pour la cohérence
             { model: User, as: 'reporter', attributes: ['id', 'username', 'avatar'] },
-            { model: VoiceNote, as: 'reportedVoiceNote'}, // Inclure la note signalée
-            { model: User, as: 'resolvedBy', attributes: ['id', 'username'] } // Inclure l'admin résolveur
+            { model: VoiceNote, as: 'reportedVoiceNote', include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }] },
+            // { model: User, as: 'resolvedBy', attributes: ['id', 'username'] } // Ajout pour voir qui a résolu
          ]
      });
 
     res.status(200).json({
         status: 'success',
+        message: 'Signalement mis à jour.', // Ajouter message
         data: {
-            report: updatedReport
+            report: updatedReport ? updatedReport.toJSON() : null // Renvoyer la version à jour
         }
     });
   } catch (error) {
+     console.error(`[updateReport] Error updating report ${reportId}:`, error);
      if (error.name === 'SequelizeValidationError') {
          return res.status(400).json({ status: 'fail', message: error.errors.map(e => e.message).join(', ') });
      }

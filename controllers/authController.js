@@ -1,17 +1,31 @@
+// controllers/authController.js
+'use strict';
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const fs = require('fs'); // Module File System pour supprimer l'ancien avatar
-const path = require('path'); // Module Path pour construire les chemins de fichiers
-const { promisify } = require('util'); // Pour utiliser fs.unlink avec async/await
-const unlinkAsync = promisify(fs.unlink); // Version async de fs.unlink
+const fs = require('fs');
+const path = require('path');
+const { promisify } = require('util');
+const unlinkAsync = promisify(fs.unlink);
 
-// Importer User ET la classe Sequelize pour accéder à Op
-const { User, Sequelize } = require('../models'); // Ajustez le chemin si nécessaire
-const Op = Sequelize.Op; // Obtenir l'opérateur Op
+const db = require('../models');
+// Extraire les modèles et l'instance/classe Sequelize depuis 'db'
+const { User, VoiceNote, Report, Sequelize } = db;
+const sequelize = db.sequelize; // Récupère l'INSTANCE sequelize
+const Op = Sequelize.Op; // Récupère la CLASSE Sequelize.Op
+// ===> FIN MODIFICATION IMPORTATION <===
+
+// Vérification au démarrage (optionnel mais utile)
+if (!sequelize || typeof sequelize.getDialect !== 'function') {
+    console.error("ERREUR CRITIQUE: L'instance sequelize n'a pas été importée correctement depuis ../models !");
+    // Vous pourriez vouloir arrêter le processus ici dans un cas réel
+    // process.exit(1);
+} else {
+    console.log("[authController] Instance sequelize importée avec succès. Dialecte:", sequelize.getDialect());
+}
 
 // --- Fonction d'Inscription (Register) ---
 exports.register = async (req, res, next) => {
-    // ... (code register existant - inchangé) ...
     const { username, email, password } = req.body;
     try {
         const existingUser = await User.findOne({ where: { [Op.or]: [{ email: email }, { username: username }] } });
@@ -21,225 +35,370 @@ exports.register = async (req, res, next) => {
         }
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
+        // Assurez-vous que les champs correspondent à votre modèle User (ex: pas de isActive par défaut ici)
         const newUser = await User.create({ username, email, password: hashedPassword });
-        const userResponse = {
-            id: newUser.id, username: newUser.username, email: newUser.email,
-            avatar: newUser.avatar, bio: newUser.bio, fullName: newUser.fullName,
-            genre: newUser.genre, pays: newUser.pays,
-            createdAt: newUser.createdAt, updatedAt: newUser.updatedAt
-        };
+        // Exclure le mot de passe de la réponse
+        const userResponse = { ...newUser.toJSON() };
+        delete userResponse.password;
         res.status(201).json({ success: true, message: 'User registered successfully.', user: userResponse });
     } catch (error) {
         console.error('Registration Error:', error);
         if (error.name === 'SequelizeValidationError') {
              return res.status(400).json({ success: false, message: 'Validation error.', errors: error.errors.map(e => ({ msg: e.message, path: e.path })) });
         }
-        res.status(500).json({ success: false, message: 'An error occurred during registration.', error: process.env.NODE_ENV === 'development' ? error.message : undefined });
+        // Utiliser next pour le gestionnaire d'erreurs global
+        next(error);
     }
 };
 
 // --- Fonction de Connexion (Login) ---
 exports.login = async (req, res, next) => {
-    // ... (code login existant avec logs - inchangé) ...
     console.log('--- Login attempt started ---');
-    console.log('Request body:', req.body);
     const { email, password } = req.body;
     try {
-        console.log(`[Login] Attempting to find user with email: ${email}`);
         const user = await User.findOne({ where: { email: email } });
-        console.log('[Login] User.findOne completed.');
         if (!user) {
             console.log(`[Login] User not found for email: ${email}`);
-            return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+            return res.status(401).json({ success: false, message: 'Identifiants invalides.' }); // Message générique
         }
-        console.log(`[Login] User found: ${user.id}`);
-        console.log('[Login] Attempting to compare password...');
-        let isMatch = false;
-        try { isMatch = await bcrypt.compare(password, user.password); console.log('[Login] bcrypt.compare completed. Match:', isMatch); }
-        catch(bcryptError) { console.error('[Login] Error during bcrypt.compare:', bcryptError); return res.status(500).json({ success: false, message: 'An internal error occurred during authentication.' }); }
-        if (!isMatch) { console.log(`[Login] Password mismatch for user: ${user.id}`); return res.status(401).json({ success: false, message: 'Invalid credentials.' }); }
+        console.log(`[Login] User found: ${user.id}. Checking password...`);
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            console.log(`[Login] Password mismatch for user: ${user.id}`);
+            return res.status(401).json({ success: false, message: 'Identifiants invalides.' }); // Message générique
+        }
         console.log(`[Login] Password matched for user: ${user.id}`);
-        console.log('[Login] Preparing JWT payload...');
-        const payload = { user: { id: user.id } };
+
+        // ===> MODIFICATION IMPORTANTE: Inclure le statut admin dans le payload JWT <===
+        const payload = {
+            user: {
+              id: user.id,
+              // Assurez-vous que le nom 'isAdmin' correspond à votre modèle User
+              // Si vous utilisez 'role', mettez 'role: user.role' à la place
+              isAdmin: user.isAdmin
+            }
+        };
+        // ===> FIN MODIFICATION JWT PAYLOAD <===
+
         const secret = process.env.JWT_SECRET;
         const expiresIn = process.env.JWT_EXPIRES_IN || '1h';
-        console.log(`[Login] JWT Secret check: ${secret ? 'Exists' : 'MISSING!'}`);
-        if (!secret) { console.error("FATAL ERROR: JWT_SECRET is not defined!"); return res.status(500).json({ success: false, message: "Server configuration error (JWT Secret missing)."}); }
-        console.log('[Login] Attempting to sign JWT...');
+        if (!secret) {
+            console.error("FATAL ERROR: JWT_SECRET is not defined!");
+            // Ne pas appeler next() ici car c'est une erreur serveur critique
+            return res.status(500).json({ success: false, message: "Erreur de configuration serveur."});
+        }
+
         jwt.sign( payload, secret, { expiresIn: expiresIn }, (err, token) => {
-            console.log('[Login] Inside jwt.sign callback.');
-            if (err) { console.error('JWT Signing Error:', err); return res.status(500).json({ success: false, message: 'Failed to generate authentication token.'}); }
+            if (err) {
+                console.error('JWT Signing Error:', err);
+                // Il vaut mieux passer l'erreur au handler global ici
+                return next(new Error('Failed to generate authentication token.'));
+            }
             console.log('[Login] JWT signed successfully.');
-            const userResponse = {
-                id: user.id, username: user.username, email: user.email, avatar: user.avatar,
-                bio: user.bio, fullName: user.fullName, genre: user.genre, pays: user.pays,
-                createdAt: user.createdAt, updatedAt: user.updatedAt
-            };
-            console.log('[Login] User response prepared.');
-            console.log('[Login] Sending success response...');
+            // Exclure le mot de passe de la réponse utilisateur
+            const userResponse = { ...user.toJSON() };
+            delete userResponse.password;
             res.status(200).json({ success: true, message: 'Login successful.', token: token, user: userResponse });
-            console.log('[Login] Success response sent.');
         });
-        console.log('[Login] After calling jwt.sign (callback is async).');
     } catch (error) {
-        console.error('--- Login Controller General Error Catch ---');
-        console.error(error);
-        res.status(500).json({ success: false, message: 'An error occurred during login.', error: process.env.NODE_ENV === 'development' ? error.message : undefined });
+        console.error('--- Login Controller General Error Catch ---', error);
+        next(error); // Passer à errorHandler
     }
 };
 
-
-// --- Fonction pour récupérer l'utilisateur connecté ---
+// --- Fonction pour récupérer l'utilisateur connecté (/me) ---
 exports.getMe = async (req, res, next) => {
-    // ... (code getMe existant - inchangé) ...
     try {
-        if (!req.user || !req.user.id) { console.warn('User ID not found in req.user (getMe controller).'); return res.status(401).json({ status: 'fail', message: 'Unauthorized: Could not identify user.' }); }
+        // req.user est défini par le middleware d'authentification (authMiddleware)
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ status: 'fail', message: 'Non autorisé: Impossible d\'identifier l\'utilisateur.' });
+        }
         const userId = req.user.id;
+        // Récupérer l'utilisateur SANS le mot de passe
         const user = await User.findByPk(userId, { attributes: { exclude: ['password'] } });
-        if (!user) { return res.status(404).json({ status: 'fail', message: 'User associated with this token not found.' }); }
-        res.status(200).json({ status: 'success', data: { user: user } });
+        if (!user) {
+            // Token valide mais utilisateur supprimé entre temps ?
+            return res.status(404).json({ status: 'fail', message: 'Utilisateur associé à ce token introuvable.' });
+        }
+        res.status(200).json({ status: 'success', data: { user: user.toJSON() } }); // Utiliser toJSON
     } catch (error) {
         console.error('GetMe Error:', error);
-        res.status(500).json({ status: 'error', message: 'An error occurred while fetching user profile.', error: process.env.NODE_ENV === 'development' ? error.message : undefined });
+        next(error);
     }
 };
 
-
-// --- AJOUT: Fonction pour mettre à jour l'utilisateur connecté ---
+// --- Fonction pour mettre à jour l'utilisateur connecté (/me) ---
 exports.updateMe = async (req, res, next) => {
-    console.log('--- updateMe Controller Start ---');
-    console.log('User ID from Auth:', req.user?.id); // ID de l'utilisateur authentifié
-    console.log('Request Body (req.body):', req.body); // Données textuelles du formulaire (ou JSON)
-    console.log('Request File (req.file):', req.file); // Infos sur le fichier uploadé par Multer
-
-    // 1. Vérifier l'authentification (normalement déjà fait par middleware, mais sécurité)
-    if (!req.user || !req.user.id) {
-        console.warn('[UpdateMe] User ID manquant dans req.user');
-        return res.status(401).json({ status: 'fail', message: 'Authentification requise.' });
-    }
+    // ... (Garder votre code de mise à jour de profil existant et fonctionnel) ...
+    // Assurez-vous qu'il utilise bien 'req.user.id' et gère l'upload d'avatar si nécessaire
+     console.log('--- updateMe Controller Start ---');
+    if (!req.user || !req.user.id) { return res.status(401).json({ status: 'fail', message: 'Auth requise.' }); }
     const userId = req.user.id;
-
-    // 2. Filtrer les champs autorisés à la mise à jour depuis req.body
-    const allowedUpdates = ['fullName', 'email', 'genre', 'pays', 'bio']; // Adapter cette liste
+    const allowedUpdates = ['fullName', 'email', 'genre', 'pays', 'bio'];
     const filteredBody = {};
     Object.keys(req.body).forEach(key => {
         if (allowedUpdates.includes(key)) {
-            // Gérer la valeur null explicitement si '' est envoyé pour des champs optionnels comme genre/pays/bio
-            if ((key === 'genre' || key === 'pays' || key === 'bio' || key === 'fullName') && req.body[key] === '') {
-                 filteredBody[key] = null;
-            } else {
-                 filteredBody[key] = req.body[key];
-            }
+             filteredBody[key] = (req.body[key] === '') ? null : req.body[key];
         }
     });
-    console.log('[UpdateMe] Données filtrées pour la mise à jour (hors avatar):', filteredBody);
-
-    // 3. Préparer le chemin du nouvel avatar si uploadé
-    let newAvatarPath = null;
-    if (req.file) {
-        // Construire le chemin relatif accessible via le web
-        // IMPORTANT: Adapte '/uploads/avatars/' au chemin que tu utilises réellement
-        // pour servir tes fichiers statiques d'avatars.
-        newAvatarPath = `/uploads/avatars/${req.file.filename}`;
-        console.log('[UpdateMe] Nouveau chemin avatar préparé:', newAvatarPath);
-    }
-
-    // 4. Vérifier si des données (texte ou fichier) sont présentes pour la mise à jour
+    let newAvatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
     if (Object.keys(filteredBody).length === 0 && !newAvatarPath) {
-        console.log('[UpdateMe] Aucune donnée valide ou nouveau fichier à mettre à jour.');
-        // Renvoyer un message indiquant qu'il n'y a rien à faire, ou juste les données actuelles
-        try {
-            const currentUser = await User.findByPk(userId, { attributes: { exclude: ['password'] } });
-            return res.status(200).json({
-                status: 'success',
-                message: 'Aucune modification détectée.',
-                data: { user: currentUser }
-            });
-        } catch (fetchError) {
-            // Gérer l'erreur si la récupération échoue aussi
-            console.error('[UpdateMe] Erreur récupération utilisateur actuel après aucune modif détectée:', fetchError);
-             return res.status(500).json({ status: 'error', message: 'Erreur serveur.'});
+        try { const currentUser = await User.findByPk(userId, { attributes: { exclude: ['password'] } }); return res.status(200).json({ status: 'success', message: 'Aucune modif.', data: { user: currentUser } }); }
+        catch (fetchError) { return next(fetchError); }
+    }
+    try {
+        const user = await User.findByPk(userId);
+        if (!user) { if (req.file) await unlinkAsync(req.file.path).catch(console.error); return res.status(404).json({ status: 'fail', message: 'Utilisateur non trouvé.' }); }
+        const updateData = { ...filteredBody };
+        let oldAvatarPath = user.avatar;
+        if (newAvatarPath) updateData.avatar = newAvatarPath;
+        Object.assign(user, updateData);
+        await user.save();
+        if (newAvatarPath && oldAvatarPath) {
+            const absoluteOldPath = path.join(__dirname, '..', 'public', oldAvatarPath);
+            await unlinkAsync(absoluteOldPath).catch(err => console.error(`[UpdateMe] Erreur suppression ancien avatar:`, err.message));
         }
+        const updatedUserResponse = { ...user.toJSON() };
+        delete updatedUserResponse.password;
+        res.status(200).json({ status: 'success', message: 'Profil mis à jour.', data: { user: updatedUserResponse } });
+    } catch (error) {
+        if (req.file) await unlinkAsync(req.file.path).catch(err => console.error('[UpdateMe] Erreur suppression fichier uploadé (DB save fail):', err));
+        if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ status: 'fail', message: 'Validation échouée.', errors: error.errors?.map(e => ({ field: e.path, message: e.message })) });
+        }
+        next(error);
+    }
+};
+
+
+// =======================================
+// === NOUVELLES FONCTIONS ADMIN       ===
+// =======================================
+
+// --- Lister TOUS les Utilisateurs (Admin) ---
+exports.getAllUsers = async (req, res, next) => {
+    console.log("[Admin - getAllUsers] Query params:", req.query);
+    try {
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const offset = (page - 1) * limit;
+        const searchTerm = req.query.search || '';
+        const statusFilter = req.query.status || '';
+
+        const whereClause = {};
+        if (statusFilter === 'active') whereClause.isActive = true;
+        else if (statusFilter === 'blocked') whereClause.isActive = false;
+        if (searchTerm) {
+            whereClause[Op.or] = [
+                { username: { [Op.iLike]: `%${searchTerm}%` } },
+                { email: { [Op.iLike]: `%${searchTerm}%` } }
+            ];
+        }
+
+        const { count, rows: users } = await User.findAndCountAll({
+            where: whereClause,
+            attributes: { exclude: ['password'] },
+            order: [['createdAt', 'DESC']],
+            limit: limit,
+            offset: offset,
+        });
+
+        const totalPages = Math.ceil(count / limit);
+        res.status(200).json({
+            status: 'success', results: users.length, totalUsers: count,
+            totalPages: totalPages, currentPage: page,
+            data: { users: users.map(u => u.toJSON()) }
+        });
+
+    } catch (error) {
+        console.error("[Admin - getAllUsers] Error:", error);
+        next(error);
+    }
+};
+
+// --- Modifier le Statut d'un Utilisateur (Admin) ---
+exports.updateUserStatus = async (req, res, next) => {
+    const targetUserId = req.params.userId;
+    const adminUserId = req.user.id; // Défini par 'protect' middleware
+    const { isActive } = req.body;
+
+    console.log(`[Admin - updateUserStatus] Admin ${adminUserId} updating User ${targetUserId} -> isActive: ${isActive}`);
+
+    if (typeof isActive !== 'boolean') {
+        return res.status(400).json({ status: 'fail', message: "Le champ 'isActive' (booléen) est requis." });
+    }
+    if (targetUserId === adminUserId) {
+         return res.status(403).json({ status: 'fail', message: "Un administrateur ne peut pas modifier son propre statut." });
     }
 
     try {
-        // 5. Trouver l'utilisateur à mettre à jour
-        console.log(`[UpdateMe] Recherche de l'utilisateur ID: ${userId}`);
-        const user = await User.findByPk(userId);
-        if (!user) {
-            console.log('[UpdateMe] Utilisateur non trouvé pour mise à jour.');
-            // Si un fichier a été uploadé mais l'utilisateur n'est pas trouvé, supprimer le fichier uploadé
-            if (req.file) {
-                await unlinkAsync(req.file.path).catch(err => console.error('[UpdateMe] Erreur suppression fichier uploadé (user non trouvé):', err));
-            }
-            return res.status(404).json({ status: 'fail', message: 'Utilisateur non trouvé.' });
-        }
-        console.log('[UpdateMe] Utilisateur trouvé.');
+        const userToUpdate = await User.findByPk(targetUserId);
+        if (!userToUpdate) { return res.status(404).json({ status: 'fail', message: "Utilisateur cible non trouvé." }); }
 
-        // 6. Préparer les données finales pour la mise à jour (texte + avatar)
-        const updateData = { ...filteredBody };
-        let oldAvatarPath = user.avatar; // Stocker l'ancien chemin pour suppression éventuelle
+        userToUpdate.isActive = isActive;
+        await userToUpdate.save();
+        console.log(`[Admin - updateUserStatus] User ${targetUserId} status updated to isActive: ${isActive}`);
 
-        if (newAvatarPath) {
-            updateData.avatar = newAvatarPath; // Ajouter le nouveau chemin avatar aux données à sauvegarder
-        }
+        res.status(200).json({ status: 'success', message: `Statut utilisateur mis à jour.` });
+    } catch (error) {
+        console.error(`[Admin - updateUserStatus] Error updating user ${targetUserId}:`, error);
+        next(error);
+    }
+};
 
-        // 7. Appliquer et sauvegarder les modifications
-        console.log('[UpdateMe] Application des modifications:', updateData);
-        Object.assign(user, updateData); // Applique les changements à l'instance Sequelize
-        await user.save(); // Sauvegarde dans la base de données
-        console.log('[UpdateMe] Utilisateur mis à jour avec succès dans la DB.');
+// --- Obtenir les Statistiques pour le Dashboard (Admin) ---
+exports.getAdminStats = async (req, res, next) => {
+     console.log("[Admin - getAdminStats] Request received.");
+     try {
+        const [userCount, voiceNoteCount, pendingReportCount] = await Promise.all([
+            User.count(),
+            VoiceNote.count(), // Assurez-vous que VoiceNote est importé
+            Report.count({ where: { status: 'pending' }}) // Assurez-vous que Report est importé
+        ]);
+        const statsData = { totalUsers: userCount, totalVoiceNotes: voiceNoteCount, pendingReports: pendingReportCount };
+        console.log("[Admin - getAdminStats] Stats calculated:", statsData);
+        res.status(200).json({ status: 'success', data: statsData });
+     } catch(error) {
+         console.error("[Admin - getAdminStats] Error:", error);
+         next(error);
+     }
+};
 
-        // 8. Supprimer l'ancien avatar du système de fichiers (si un nouveau a été uploadé et l'ancien existait)
-        if (newAvatarPath && oldAvatarPath) {
-            console.log(`[UpdateMe] Tentative de suppression de l'ancien avatar: ${oldAvatarPath}`);
-            // Construire le chemin absolu vers l'ancien fichier dans le dossier 'public' (ou équivalent)
-            // IMPORTANT: Adapte `__dirname, '..', 'public'` à ta structure de projet
-            const absoluteOldPath = path.join(__dirname, '..', 'public', oldAvatarPath);
-            console.log(`[UpdateMe] Chemin absolu ancien avatar: ${absoluteOldPath}`);
-            await unlinkAsync(absoluteOldPath).catch(err => {
-                // Log l'erreur mais ne bloque pas la réponse succès si la suppression échoue
-                console.error(`[UpdateMe] Erreur lors de la suppression de l'ancien avatar (${absoluteOldPath}):`, err.code === 'ENOENT' ? 'Fichier non trouvé' : err.message);
-            });
-        }
+// --- Obtenir les Données pour les Graphiques (Admin - Exemple) ---
+// --- Obtenir les Données pour Graphique Utilisateurs par Mois (Admin - Adapté pour MySQL) ---
+exports.getUserStatsOverTime = async (req, res, next) => {
+    console.log("[Admin - getUserStatsOverTime - MySQL] Request received.");
+    try {
+        // Obtenir la date d'il y a 12 mois
+        const twelveMonthsAgo = new Date();
+        twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
 
-        // 9. Renvoyer une réponse succès avec l'utilisateur mis à jour
-        const updatedUserResponse = { ...user.toJSON() }; // Convertir en objet simple
-        delete updatedUserResponse.password; // Toujours exclure le mot de passe
+        // --- Utilisation de DATE_FORMAT pour MySQL ---
+        const dateFormater = Sequelize.fn('DATE_FORMAT', Sequelize.col('created_at'), '%Y-%m');
+
+        // Requête pour regrouper les utilisateurs par mois de création
+        const usersByMonth = await User.findAll({
+            attributes: [
+                [dateFormater, 'month'], // Alias 'month' pour la date formatée YYYY-MM
+                [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'] // Compter les utilisateurs
+            ],
+            where: {
+                // Filtrer sur les 12 derniers mois (utilise le nom de colonne snake_case)
+                created_at: { [Op.gte]: twelveMonthsAgo }
+            },
+            // Grouper par l'expression de formatage de date
+            group: [dateFormater],
+             // Trier par l'expression de formatage de date
+            order: [[dateFormater, 'ASC']],
+            raw: true // Renvoyer des objets JSON simples
+        });
+
+        // Formater les résultats pour Chart.js
+        const labels = usersByMonth.map(item => item.month); // Récupère les 'YYYY-MM'
+        const values = usersByMonth.map(item => item.count); // Récupère les comptes
+
+        console.log("[Admin - getUserStatsOverTime - MySQL] Data prepared:", { labels, values });
 
         res.status(200).json({
             status: 'success',
-            message: 'Profil mis à jour avec succès.',
-            data: {
-                user: updatedUserResponse
-            }
+            data: { labels, values } // Envoyer les données formatées
         });
-        console.log('--- updateMe Controller End (Success) ---');
 
-    } catch (error) {
-        console.error('--- updateMe Controller ERROR ---');
-        console.error(error);
-
-        // Si une nouvelle image a été uploadée mais la sauvegarde DB a échoué, supprimer la nouvelle image
-        if (req.file) {
-            console.warn('[UpdateMe] Erreur lors de la sauvegarde DB, suppression du fichier uploadé:', req.file.path);
-            await unlinkAsync(req.file.path).catch(err => console.error('[UpdateMe] Erreur suppression fichier uploadé (échec sauvegarde DB):', err));
+    } catch(error) {
+        console.error("[Admin - getUserStatsOverTime - MySQL] Error:", error);
+        // Log l'erreur SQL originale si disponible (utile pour déboguer MySQL)
+        if (error.original) {
+             console.error("[Admin - getUserStatsOverTime - MySQL] Original SQL Error:", error.original.sqlMessage || error.original);
         }
-
-        // Gestion spécifique des erreurs Sequelize
-        if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).json({
-                status: 'fail',
-                message: error.errors?.map(e => e.message).join(', ') || 'Erreur de validation.',
-                errors: error.errors?.map(e => ({ field: e.path, message: e.message })) // Plus détaillé si possible
-            });
-        }
-
-        // Erreur serveur générique
-        res.status(500).json({
-            status: 'error',
-            message: 'Une erreur est survenue lors de la mise à jour du profil.',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        next(error); // Passer au gestionnaire d'erreurs global
     }
 };
+
+// --- Obtenir les Données pour le Graphique d'Activité par Jour (Admin) ---
+exports.getActivityStatsOverTime = async (req, res, next) => {
+    console.log("[Admin - getActivityStatsOverTime] Request received.");
+    try {
+        const daysToGoBack = parseInt(req.query.days, 10) || 30;
+        const startDate = new Date(); startDate.setDate(startDate.getDate() - daysToGoBack); startDate.setHours(0, 0, 0, 0);
+
+        let dateFunction;
+        // Utiliser l'instance sequelize importée pour obtenir le dialecte
+        const dialect = sequelize.getDialect();
+        console.log(`[Admin - getActivityStatsOverTime] Dialect: ${dialect}`);
+
+        // Fonction de date pour YYYY-MM-DD
+        if (dialect === 'mysql') {
+             // Utiliser la classe Sequelize (importée via déstructuration) pour les fonctions
+             dateFunction = Sequelize.fn('DATE_FORMAT', Sequelize.col('created_at'), '%Y-%m-%d');
+        } else if (dialect === 'postgres') {
+             dateFunction = Sequelize.fn('TO_CHAR', Sequelize.col('created_at'), 'YYYY-MM-DD');
+        } else if (dialect === 'sqlite') {
+             dateFunction = Sequelize.fn('strftime', '%Y-%m-%d', Sequelize.col('created_at'));
+        } else {
+             console.warn("Dialecte non géré pour agrégation jour. Tentative fallback.");
+             dateFunction = Sequelize.fn('SUBSTR', Sequelize.cast(Sequelize.col('created_at'), 'string'), 1, 10);
+        }
+
+        // --- Requêtes parallèles ---
+        console.log(`[Admin - getActivityStatsOverTime] Fetching data from ${startDate.toISOString().split('T')[0]}...`);
+        const [usersByDay, notesByDay] = await Promise.all([
+            User.findAll({
+                attributes: [ [dateFunction, 'day'], [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'] ],
+                where: { created_at: { [Op.gte]: startDate } }, group: [dateFunction], order: [[dateFunction, 'ASC']], raw: true
+            }),
+            VoiceNote.findAll({
+                attributes: [ [dateFunction, 'day'], [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'] ],
+                where: { created_at: { [Op.gte]: startDate } }, group: [dateFunction], order: [[dateFunction, 'ASC']], raw: true
+            })
+        ]);
+
+        // --- VÉRIFICATION DES DONNÉES BRUTES ---
+        console.log("[Admin - getActivityStatsOverTime] Raw usersByDay data:", JSON.stringify(usersByDay, null, 2));
+        console.log("[Admin - getActivityStatsOverTime] Raw notesByDay data:", JSON.stringify(notesByDay, null, 2));
+
+        // --- Combinaison et Formatage ---
+        console.log("[Admin - getActivityStatsOverTime] Formatting data...");
+        const usersMap = new Map(usersByDay.map(item => [item.day, parseInt(item.count, 10) || 0]));
+        const notesMap = new Map(notesByDay.map(item => [item.day, parseInt(item.count, 10) || 0]));
+
+        const labels = []; const usersData = []; const notesData = [];
+        let currentDate = new Date(startDate); const today = new Date(); today.setHours(23, 59, 59, 999);
+
+        while (currentDate <= today) {
+            const year = currentDate.getFullYear();
+            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const day = String(currentDate.getDate()).padStart(2, '0');
+            const dateString = `${year}-${month}-${day}`;
+            labels.push(dateString);
+            usersData.push(usersMap.get(dateString) || 0);
+            notesData.push(notesMap.get(dateString) || 0);
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        console.log(`[Admin - getActivityStatsOverTime] Data prepared for ${labels.length} days.`);
+        // Optionnel: logguer les données finales si besoin de déboguer le formatage
+        // console.log("[Admin - getActivityStatsOverTime] Final labels:", labels);
+        // console.log("[Admin - getActivityStatsOverTime] Final usersData:", usersData);
+        // console.log("[Admin - getActivityStatsOverTime] Final notesData:", notesData);
+
+        // --- Réponse API ---
+        res.status(200).json({
+            status: 'success',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Utilisateurs Créés', values: usersData },
+                    { label: 'Notes Créées', values: notesData }
+                ]
+            }
+        });
+
+    } catch(error) {
+        console.error("[Admin - getActivityStatsOverTime] Error:", error);
+        if (error.original) {
+             console.error("[Admin - getActivityStatsOverTime] Original SQL Error:", error.original.sqlMessage || error.original);
+        }
+        next(error);
+    }
+};
+
