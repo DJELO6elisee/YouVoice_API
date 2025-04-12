@@ -96,6 +96,7 @@ const reactionRoutes = require('./routes/reactionRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const shareRoutes = require('./routes/shareRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+
 // ====> AJOUT : Importer le routeur des notifications
 const notificationRoutes = require('./routes/notificationRoutes'); // Assurez-vous que le fichier existe
 
@@ -108,6 +109,7 @@ apiRouter.use('/reactions', reactionRoutes);
 apiRouter.use('/comments', commentRoutes);
 apiRouter.use('/shares', shareRoutes);
 apiRouter.use('/reports', reportRoutes);
+
 // ====> AJOUT : Monter le routeur des notifications
 console.log("[API Routes] Montage de notificationRoutes sur /api/notifications");
 apiRouter.use('/notifications', notificationRoutes);

@@ -409,4 +409,78 @@ safeRoute('get', // Ou router.get si vous n'utilisez pas safeRoute
  *              datasets: { type: array, items: { $ref: '#/components/schemas/MultiLineChartDataset' } }
  */
 
+
+// ============================================
+// == ROUTES ADMIN - REPORTS                ==
+// ============================================
+
+// --- GET ALL REPORTS ---
+/** @swagger
+ * /api/admin/reports:
+ *   get:
+ *     summary: Get list of reports (Admin)
+ *     tags: [Admin - Report Management]
+ *     security: [- bearerAuth: []]
+ *     parameters: [ { name: page, in: query, schema: { type: integer, default: 1 } }, { name: limit, in: query, schema: { type: integer, default: 10 } }, { name: status, in: query, schema: { type: string, enum: [pending, resolved, rejected, under_review] } }, { name: sortBy, in: query, schema: { type: string, enum: [createdAt, status], default: createdAt } }, { name: order, in: query, schema: { type: string, enum: [ASC, DESC], default: DESC } } ]
+ *     responses: { 200: { description: List of reports }, 400: {}, 401: {}, 403: {}, 500: {} }
+ */
+safeRoute('get',
+    '/reports',
+    authMiddleware, // 1. Vérifie connexion
+    isAdmin,        // 2. Vérifie rôle admin
+    [ // Validation des query params
+        query('page').optional().isInt({ min: 1 }).toInt(),
+        query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+        query('status').optional().isIn(['pending', 'resolved', 'rejected', 'under_review']).withMessage('Statut invalide'),
+        query('sortBy').optional().isIn(['createdAt', 'status']).default('createdAt'),
+        query('order').optional().isIn(['ASC', 'DESC']).default('DESC').toUpperCase()
+    ],
+    handleValidationErrors,
+    authController.getAllReports // Utilise adminReportController
+);
+
+// --- UPDATE REPORT STATUS ---
+/** @swagger
+ * /api/admin/reports/{reportId}:
+ *   patch:
+ *     summary: Update a report's status and resolution (Admin)
+ *     tags: [Admin - Report Management]
+ *     security: [- bearerAuth: []]
+ *     parameters: [ { name: reportId, in: path, required: true, schema: { type: string, format: uuid } } ]
+ *     requestBody: { required: true, content: { application/json: { schema: { properties: { status: { type: string, enum: [resolved, rejected, pending, under_review] }, resolution: { type: string, nullable: true } }, required: [status] } } } }
+ *     responses: { 200: { description: Report updated }, 400: {}, 401: {}, 403: {}, 404: {}, 500: {} }
+ */
+safeRoute('patch',
+    '/reports/:reportId',
+    authMiddleware, // 1. Vérifie connexion
+    isAdmin,        // 2. Vérifie rôle admin
+    [
+        param('reportId', 'Format ID signalement invalide').isUUID(),
+        body('status').isIn(['pending', 'resolved', 'rejected', 'under_review']).withMessage('Statut invalide.'),
+        body('resolution').optional({ checkFalsy: true }).isString().trim().escape()
+    ],
+    handleValidationErrors,
+    authController.updateReportStatus // Utilise adminReportController
+);
+
+ // --- DELETE REPORTED CONTENT ---
+ /** @swagger
+  * /api/admin/content/{itemType}/{itemId}:
+  *   delete:
+  *     summary: Delete reported content (Admin)
+  *     tags: [Admin - Report Management]
+  *     security: [- bearerAuth: []]
+  *     parameters: [ { name: itemType, in: path, required: true, schema: { type: string, enum: [voice-note, comment] } }, { name: itemId, in: path, required: true, schema: { type: string, format: uuid } } ]
+  *     responses: { 200: { description: Content deleted }, 400: {}, 401: {}, 403: {}, 404: {}, 500: {} }
+  */
+ safeRoute('delete',
+    '/content/itemType/:itemId',
+    authMiddleware, // 1. Vérifie connexion
+    isAdmin,        // 2. Vérifie rôle admin
+
+     [ param('itemId', 'Format ID contenu invalide').isUUID() ],
+     handleValidationErrors,
+     authController.deleteReportedContent // Utilise adminReportController
+ );
+
 module.exports = router;

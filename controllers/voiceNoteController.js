@@ -2,14 +2,12 @@
 
 // Importer les modèles
 const { VoiceNote, User, Reaction, Comment, Sequelize } = require('../models');
-// --- MODIFICATION IMPORT UPLOAD ---
 const { uploadVoiceNote } = require('../utils/upload');
 const fs = require('fs').promises;
 const path = require('path');
 const Op = Sequelize.Op;
 
 // === Créer une nouvelle note vocale ===
-// (INCHANGÉ - Gardez votre fonction createVoiceNote ici)
 exports.createVoiceNote = [
   uploadVoiceNote.single('audio'),
   async (req, res, next) => {
@@ -52,11 +50,9 @@ exports.createVoiceNote = [
 ];
 
 
-// ===> SUPPRIMEZ L'ANCIENNE FONCTION getVoiceNotes QUI ÉTAIT ICI <===
 
 
 // === Obtenir les détails d'une note vocale par ID ===
-// (INCHANGÉ - Gardez votre fonction getVoiceNoteById ici)
 exports.getVoiceNoteById = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -91,7 +87,6 @@ exports.getVoiceNoteById = async (req, res, next) => {
 
 
 // === Supprimer une note vocale ===
-// (INCHANGÉ - Gardez votre fonction deleteVoiceNote ici)
 exports.deleteVoiceNote = async (req, res, next) => {
    try {
     const { id } = req.params;
@@ -118,86 +113,111 @@ exports.deleteVoiceNote = async (req, res, next) => {
 };
 
 
-// === ====> CETTE FONCTION EST MAINTENANT LA BONNE POUR LE FEED <==== ===
-// === ====> RENOMMÉE de getMyVoiceNotes à getVoiceNotes <==== ===
+// === ====> Obtenir les notes vocales avec getVoiceNotes <==== ===
 exports.getVoiceNotes = async (req, res, next) => {
-  console.log("[getVoiceNotes - Main Feed] Start processing request."); // Log pour confirmer
+  console.log("[getVoiceNotes - Main Feed] Start processing request.");
   try {
-    const { page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC' } = req.query;
+    // ===> AJOUT DE 'search' DANS LA DESTRUCTURATION <===
+    const { page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC', search } = req.query;
     const offset = (page - 1) * limit;
+
+    console.log(`[getVoiceNotes - Main Feed] Params: page=${page}, limit=${limit}, sortBy=${sortBy}, order=${order}, search=${search || 'none'}`);
+
+    // --- Configuration Tri (inchangée) ---
     const allowedSortBy = ['createdAt', 'reactionCount'];
     let sortField = allowedSortBy.includes(sortBy) ? sortBy : 'createdAt';
     const sortOrder = ['ASC', 'DESC'].includes(order.toUpperCase()) ? order.toUpperCase() : 'DESC';
-    console.log(`[getVoiceNotes - Main Feed] Params: page=${page}, limit=${limit}, sortBy=${sortField}, order=${sortOrder}`);
-
     const dialect = VoiceNote.sequelize.options.dialect;
     const quote = (identifier) => dialect === 'mysql' ? `\`${identifier}\`` : `"${identifier}"`;
     const reactionsTable = quote(Reaction.tableName || 'reactions');
     const reactionFkColumn = quote('voice_note_id');
-    const voiceNoteAlias = quote('VoiceNote'); // Utilise l'alias défini par Sequelize
+    const voiceNoteAlias = quote(VoiceNote.name); // Utilise le nom du modèle (plus sûr que 'VoiceNote')
     const voiceNotePkColumn = quote('id');
-
-    const reactionCountLiteral = Sequelize.literal(
-        `(SELECT COUNT(*) FROM ${reactionsTable} WHERE ${reactionsTable}.${reactionFkColumn} = ${voiceNoteAlias}.${voiceNotePkColumn})`
-    );
-
+    const reactionCountLiteral = Sequelize.literal(`(SELECT COUNT(*) FROM ${reactionsTable} WHERE ${reactionsTable}.${reactionFkColumn} = ${voiceNoteAlias}.${voiceNotePkColumn})`);
     let orderClause = [];
     if (sortField === 'reactionCount') {
-        orderClause = [[Sequelize.literal('reactionCount'), sortOrder]];
-        orderClause.push(['created_at', 'DESC']); // Tri secondaire
+        orderClause = [[Sequelize.literal('reactionCount'), sortOrder], ['created_at', 'DESC']];
     } else {
         const dbColumnName = sortBy === 'createdAt' ? 'created_at' : sortBy;
         if (VoiceNote.rawAttributes[dbColumnName]) { orderClause = [[dbColumnName, sortOrder]]; }
         else { orderClause = [['created_at', 'DESC']]; }
     }
-     console.log("[getVoiceNotes - Main Feed] Order clause:", orderClause);
+    console.log("[getVoiceNotes - Main Feed] Order clause:", orderClause);
 
-    // --- Requête Principale AVEC LES BONS INCLUDES ---
-    const { count, rows: voiceNotes } = await VoiceNote.findAndCountAll({
+    // ===> NOUVEAU : Construction de la clause WHERE pour la recherche <===
+    let whereClause = {}; // Commence par un objet vide
+    if (search && search.trim() !== '') {
+      const searchTerm = `%${search.trim()}%`; // Ajoute les wildcards pour LIKE
+      console.log(`[getVoiceNotes - Main Feed] Applying search filter: ${searchTerm}`);
+      whereClause = {
+        [Op.or]: [
+          // Recherche dans la description de la note vocale (sensible à la casse par défaut selon DB)
+          { description: { [Op.like]: searchTerm } },
+          // Recherche dans le username de l'utilisateur associé
+          { '$user.username$': { [Op.like]: searchTerm } }
+          
+        ]
+      };
+    }
+
+    // --- Requête Principale AVEC LA CLAUSE WHERE ---
+    const findOptions = {
+      where: whereClause, // <<< APPLIQUER LA CLAUSE WHERE ICI
       attributes: {
           include: [ [reactionCountLiteral, 'reactionCount'] ],
       },
       include: [
-          { model: User, as: 'user', attributes: ['id', 'username', 'avatar'] },
+          // L'include User est essentiel pour la recherche par username
+          {
+              model: User,
+              as: 'user', // Doit correspondre à l'alias dans VoiceNote.associations
+              attributes: ['id', 'username', 'avatar'],
+              required: !!(search) // Mettre à true seulement si on recherche activement par utilisateur
+          },
           { model: Reaction, as: 'reactions', attributes: ['id', 'user_id', 'emoji'], required: false },
-          // ===> INCLUDES POUR LES COMMENTAIRES <===
           {
               model: Comment,
-              as: 'comments', // <<< VÉRIFIEZ CET ALIAS DANS VoiceNote MODEL
+              as: 'comments',
               attributes: ['id', 'text', 'user_id', 'createdAt'],
               required: false,
               order: [['createdAt', 'ASC']],
               include: [
-                  {
-                      model: User,
-                      as: 'user', // <<< VÉRIFIEZ CET ALIAS DANS Comment MODEL
-                      attributes: ['id', 'username', 'avatar']
-                  }
+                  { model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }
               ]
           }
-          // ===> FIN INCLUDES COMMENTAIRES <===
       ],
       order: orderClause,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
-      distinct: true, // Important pour count avec hasMany includes
-      // subQuery: false, // À tester seulement si LIMIT/OFFSET pose problème
+      distinct: true, // Important pour count avec includes
+      // subQuery: false, // Important pour que LIMIT/OFFSET fonctionne correctement avec les includes et le where sur l'include
+    };
+
+    // Exécute la requête pour obtenir les lignes et le compte total filtré
+    const { count, rows: voiceNotes } = await VoiceNote.findAndCountAll(findOptions);
+
+    // Le `count` retourné par findAndCountAll avec `distinct: true` et `where` sur include peut parfois être complexe.
+    // Pour un comptage total plus fiable *respectant le filtre*, on refait un count dédié.
+    const totalItems = await VoiceNote.count({
+        where: whereClause,
+        include: [ // Doit inclure le User si whereClause le référence
+            { model: User, as: 'user', required: !!(search) }
+        ],
+        distinct: true, // Compter les VoiceNote distinctes
+        // col: 'VoiceNote.id' // Spécifier la colonne peut aider dans certains cas complexes
     });
-     console.log(`[getVoiceNotes - Main Feed] Found ${count.length || count} potential rows, returning ${voiceNotes.length} distinct notes.`);
 
-    // Comptage plus fiable des notes principales
-    const totalItems = await VoiceNote.count({ distinct: true, col: 'id' });
-     console.log(`[getVoiceNotes - Main Feed] Total distinct notes count: ${totalItems}`);
 
+    console.log(`[getVoiceNotes - Main Feed] Found ${count} rows matching criteria (before distinct/limit), distinct notes matching: ${voiceNotes.length}. Total items matching filter: ${totalItems}`);
 
     res.status(200).json({
       status: 'success',
       results: voiceNotes.length,
-      totalVoiceNotes: totalItems,
+      totalVoiceNotes: totalItems, // Utilise le compte total filtré
       totalPages: Math.ceil(totalItems / limit),
       currentPage: parseInt(page, 10),
       data: {
-        voiceNotes: voiceNotes.map(vn => vn.toJSON()) // Utiliser toJSON()
+        voiceNotes: voiceNotes.map(vn => vn.toJSON())
       }
     });
     console.log("[getVoiceNotes - Main Feed] Success response sent.");
@@ -211,7 +231,7 @@ exports.getVoiceNotes = async (req, res, next) => {
   }
 };
 
-// ===> OPTIONNEL: Si vous avez besoin d'une vraie fonction pour "Mes Notes" (filtrées par user) <===
+// ===> "Mes Notes" (filtrées par user) <===
 exports.getMyVoiceNotes = async (req, res, next) => {
   console.log('[GetMyVoiceNotes] Start processing request.');
   try {
@@ -245,3 +265,4 @@ exports.getMyVoiceNotes = async (req, res, next) => {
     next(error);
   }
 };
+

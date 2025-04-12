@@ -10,7 +10,7 @@ const unlinkAsync = promisify(fs.unlink);
 
 const db = require('../models');
 // Extraire les modèles et l'instance/classe Sequelize depuis 'db'
-const { User, VoiceNote, Report, Sequelize } = db;
+const { User, VoiceNote, Report, Comment, Sequelize } = db;
 const sequelize = db.sequelize; // Récupère l'INSTANCE sequelize
 const Op = Sequelize.Op; // Récupère la CLASSE Sequelize.Op
 // ===> FIN MODIFICATION IMPORTATION <===
@@ -264,7 +264,6 @@ exports.getAdminStats = async (req, res, next) => {
      }
 };
 
-// --- Obtenir les Données pour les Graphiques (Admin - Exemple) ---
 // --- Obtenir les Données pour Graphique Utilisateurs par Mois (Admin - Adapté pour MySQL) ---
 exports.getUserStatsOverTime = async (req, res, next) => {
     console.log("[Admin - getUserStatsOverTime - MySQL] Request received.");
@@ -402,3 +401,149 @@ exports.getActivityStatsOverTime = async (req, res, next) => {
     }
 };
 
+// / === Obtenir la liste des signalements (POUR ADMIN) ===
+exports.getAllReports = async (req, res, next) => {
+  // La vérification isAdmin est faite par le middleware
+  console.log("[Admin - getAllReports] Request received. Query:", req.query);
+  try {
+    const { status, page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC' } = req.query;
+    const where = {};
+    const validStatuses = ['pending', 'resolved', 'rejected']; // Simplifié, ou Report.getAttributes()...
+    if (status && validStatuses.includes(status)) { where.status = status; }
+    else if (status) { return res.status(400).json(/* ... */); }
+
+    const orderClause = [];
+    const sortMapping = { createdAt: 'created_at', status: 'status' };
+    const sortField = sortMapping[sortBy] || 'created_at';
+    const sortDirection = ['ASC', 'DESC'].includes(order.toUpperCase()) ? order.toUpperCase() : 'DESC';
+    orderClause.push([sortField, sortDirection]);
+    if (sortField !== 'id') orderClause.push(['id', 'DESC']);
+
+    const offset = (page - 1) * limit;
+
+    const { count, rows: reports } = await Report.findAndCountAll({
+      where,
+      include: [
+        { model: User, as: 'reporter', attributes: ['id', 'username', 'avatar'] },
+        {
+          model: VoiceNote, as: 'reportedVoiceNote', required: false, // Ne pas planter si note supprimée
+          include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }]
+        },
+        // Ajouter include pour 'resolvedBy' si vous avez cette colonne/association
+        // { model: User, as: 'resolvedBy', attributes: ['id', 'username'], required: false }
+      ],
+      order: orderClause,
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+      distinct: true
+    });
+
+    console.log(`[Admin - getAllReports] Found ${count} reports, returning ${reports.length}.`);
+    res.status(200).json({
+      status: 'success', results: reports.length, totalReports: count,
+      totalPages: Math.ceil(count / limit), currentPage: parseInt(page, 10),
+      data: { reports: reports.map(r => r.toJSON()) }
+    });
+  } catch (error) {
+    console.error("[Admin - getAllReports] Error:", error);
+    next(error);
+  }
+};
+
+// === Mettre à jour un signalement (POUR ADMIN) ===
+exports.updateReportStatus = async (req, res, next) => {
+  // La vérification isAdmin est faite par le middleware
+  const reportId = req.params.reportId; // Utiliser un nom de paramètre clair
+  const adminUserId = req.user.id;
+  const { status, resolution } = req.body;
+  console.log(`[Admin - updateReportStatus] Admin ${adminUserId} updating report ${reportId}. Body:`, req.body);
+
+  try {
+    const validStatuses = ['pending', 'resolved', 'rejected']; // Simplifié
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ status: 'fail', message: `Statut invalide: ${status}.` });
+    }
+    if (['resolved', 'rejected'].includes(status) && (!resolution || String(resolution).trim() === '')) {
+      return res.status(400).json({ status: 'fail', message: 'Note de résolution requise.' });
+    }
+
+    const report = await Report.findByPk(reportId);
+    if (!report) { return res.status(404).json({ status: 'fail', message: 'Signalement non trouvé.' }); }
+
+    const updateData = { status: status, resolution: resolution };
+    // Enregistrer qui a résolu et quand
+    if (['resolved', 'rejected'].includes(status)) {
+        updateData.resolved_by_id = adminUserId; // Assurez-vous que cette colonne existe
+        updateData.resolved_at = new Date();    // Assurez-vous que cette colonne existe
+    }
+
+    const [affectedRows] = await Report.update(updateData, { where: { id: reportId } });
+
+    if (affectedRows === 0) { return res.status(404).json({ status: 'fail', message: 'Signalement non trouvé lors MàJ.' }); }
+
+    console.log(`[Admin - updateReportStatus] Report ${reportId} updated.`);
+    // Recharger pour la réponse
+    const updatedReport = await Report.findByPk(reportId, {
+         include: [
+            { model: User, as: 'reporter', attributes: ['id', 'username', 'avatar'] },
+        {
+          model: VoiceNote, as: 'reportedVoiceNote', required: false, // Ne pas planter si note supprimée
+          include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }]
+        },
+         ]
+    });
+
+    res.status(200).json({
+        status: 'success', message: 'Signalement mis à jour.',
+        data: { report: updatedReport ? updatedReport.toJSON() : null }
+    });
+  } catch (error) {
+    console.error(`[Admin - updateReportStatus] Error updating report ${reportId}:`, error);
+    next(error);
+  }
+};
+
+// Optionnel: Fonction pour supprimer du contenu signalé
+exports.deleteReportedContent = async (req, res, next) => {
+    const { itemType, itemId } = req.params; // ex: /api/admin/content/voice-note/uuid-de-la-note
+    const adminUserId = req.user.id;
+    console.log(`[Admin - deleteReportedContent] Admin ${adminUserId} deleting ${itemType} ID ${itemId}`);
+
+    try {
+        let modelToDelete;
+        if (itemType === 'voice-note') {
+             modelToDelete = VoiceNote;
+        } else if (itemType === 'comment') {
+             modelToDelete = Comment; // Assurez-vous d'importer Comment
+        } else {
+             return res.status(400).json({ status: 'fail', message: 'Type de contenu invalide.'});
+        }
+
+        const item = await modelToDelete.findByPk(itemId);
+        if (!item) {
+            return res.status(404).json({ status: 'fail', message: 'Contenu non trouvé.'});
+        }
+
+        // Logique de suppression (ex: supprimer le fichier audio avant de détruire l'enregistrement DB)
+        if (itemType === 'voice-note' && item.audio_url) {
+             // ... (logique fs.unlink comme dans deleteVoiceNote) ...
+             const absolutePath = path.join(__dirname, '..', 'public', item.audio_url);
+             await unlinkAsync(absolutePath).catch(err => console.error(`Échec suppression fichier ${item.audio_url}: ${err.message}`));
+        }
+
+        await item.destroy();
+        console.log(`[Admin - deleteReportedContent] ${itemType} ID ${itemId} supprimé.`);
+
+        // Mettre à jour tous les rapports PENDING pour cet item vers RESOLVED ?
+         await Report.update(
+             { status: 'resolved', resolution: `Contenu supprimé par Admin ${adminUserId}`, resolved_by_id: adminUserId, resolved_at: new Date() },
+             { where: { voice_note_id: itemId, status: 'pending' } } // reported_item_id doit exister dans Report model
+         );
+
+        res.status(200).json({ status: 'success', message: 'Contenu supprimé et rapports associés mis à jour.' });
+
+    } catch (error) {
+        console.error(`[Admin - deleteReportedContent] Error deleting ${itemType} ID ${itemId}:`, error);
+        next(error);
+    }
+};
