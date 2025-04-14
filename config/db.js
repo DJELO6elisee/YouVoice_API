@@ -1,7 +1,7 @@
 const { Sequelize } = require('sequelize');
 const config = require('./config.json');
 
-const env = process.env.NODE_ENV || 'development';
+const env = process.env.NODE_ENV || 'production';
 const dbConfig = config[env];
 
 // Gestion spéciale pour les valeurs "process.env..."
@@ -28,7 +28,7 @@ const sequelize = new Sequelize(
     pool: {
       ...dbConfig.pool
     },
-    dialectOptions: env === 'production' ? dbConfig.dialectOptions : {}
+    dialectOptions: env === 'development' ? dbConfig.dialectOptions : {}
   }
 );
 
