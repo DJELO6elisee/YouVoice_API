@@ -3,7 +3,7 @@ module.exports = {
     username: "root",
     password: null,
     database: "vocal_notes_db",
-    host: "127.0.0.1",
+    host: "localhost",
     dialect: "mysql",
     port: 3306,
     logging: false,
@@ -22,7 +22,7 @@ module.exports = {
     username: "root",
     password: null,
     database: "vocal_notes_test",
-    host: "127.0.0.1",
+    host: "localhost",
     dialect: "mysql",
     logging: false
   },
