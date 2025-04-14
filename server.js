@@ -132,13 +132,13 @@ app.use(errorHandler); // Gestionnaire d'erreurs global
 // ======================================
 // SERVER STARTUP
 // ======================================
-const SERVER_URL = process.env.SERVER_URL;
+const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   await initializeDatabase();
   const server = app.listen(PORT, () => {
     console.log(`Server running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);
-    console.log(`API docs available at ${SERVER_URL}/api-docs`);
+    console.log(`API docs available at http://localhost:${PORT}/api-docs`);
   });
 
   // Gestion de l'arrêt propre (graceful shutdown)
