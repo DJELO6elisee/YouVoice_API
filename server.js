@@ -24,7 +24,7 @@ app.use(
 );
 
 // --- CONFIGURATION CORS ---
-const allowedOrigin = process.env.CORS_ORIGIN || 'https://dynamic-bubblegum-c4f506.netlify.app/';
+const allowedOrigin = process.env.CORS_ORIGIN || 'https://dynamic-bubblegum-c4f506.netlify.app';
 console.log(`[CORS] Configuration: Autorisation de l'origine : ${allowedOrigin}`);
 const corsOptions = {
   origin: (origin, callback) => {
