@@ -1,4 +1,3 @@
-// controllers/notificationController.js
 'use strict';
 
 // Importer les modèles nécessaires
@@ -11,7 +10,6 @@ exports.getNotifications = async (req, res, next) => {
     try {
         const userId = req.user?.id; // Récupéré via middleware 'protect'
         if (!userId) {
-            // Normalement impossible si 'protect' est utilisé, mais sécurité
             return res.status(401).json({ status: 'fail', message: 'Authentification requise.' });
         }
 
@@ -19,7 +17,7 @@ exports.getNotifications = async (req, res, next) => {
         const limit = parseInt(req.query.limit, 10) || 15; // Limite par défaut
         const page = parseInt(req.query.page, 10) || 1;
         const offset = (page - 1) * limit;
-        const statusFilter = req.query.status; // ex: 'unread'
+        const statusFilter = req.query.status; // ex: 'non lu'
 
         // Construire la clause WHERE
         const whereClause = {
@@ -28,7 +26,6 @@ exports.getNotifications = async (req, res, next) => {
         if (statusFilter === 'unread') {
             whereClause.read = false; // Filtrer seulement les non lues
         }
-        // On pourrait ajouter d'autres filtres ici (par type, etc.)
 
         // Requête pour récupérer les notifications et compter le total
         const { count, rows: notifications } = await Notification.findAndCountAll({
@@ -41,13 +38,12 @@ exports.getNotifications = async (req, res, next) => {
                     required: false // Permet les notifications système (actorUserId peut être NULL)
                 },
                 {
-                    model: VoiceNote, // Inclure la note vocale concernée
+                    model: VoiceNote, 
                     as: 'voiceNote',
-                    attributes: ['id', 'description'], // Exemple: ID et début de description
-                    required: false // Pas toutes les notifs sont liées à une note
+                    attributes: ['id', 'description'], 
+                    required: false 
                 }
-                // Ajoutez d'autres includes si nécessaire (ex: pour voir le texte du commentaire)
-                // { model: Comment, as: 'comment', attributes: ['id', 'text'], required: false }
+                
             ],
             order: [['createdAt', 'DESC']], // Les plus récentes en premier
             limit: limit,
@@ -63,12 +59,12 @@ exports.getNotifications = async (req, res, next) => {
             totalPages: Math.ceil(count / limit),
             currentPage: page,
             data: {
-                notifications: notifications.map(n => n.toJSON()) // Bonne pratique d'utiliser toJSON
+                notifications: notifications.map(n => n.toJSON()) 
             }
         });
     } catch (error) {
         console.error("[getNotifications] Error:", error);
-        next(error); // Passer à la gestion globale des erreurs
+        next(error); 
     }
 };
 
@@ -81,15 +77,13 @@ exports.markAllAsRead = async (req, res, next) => {
             return res.status(401).json({ status: 'fail', message: 'Authentification requise.' });
         }
 
-        // Met à jour le champ 'read' à true pour toutes les notifications non lues de l'utilisateur
         const [affectedCount] = await Notification.update(
-            { read: true }, // Le champ à mettre à jour
+            { read: true }, 
             {
                 where: {
-                    recipientUserId: userId, // Pour cet utilisateur
-                    read: false // Seulement celles qui sont actuellement non lues
+                    recipientUserId: userId, 
+                    read: false 
                 },
-                // returning: false // Pas besoin de retourner les lignes affectées généralement
             }
         );
 
@@ -99,10 +93,8 @@ exports.markAllAsRead = async (req, res, next) => {
         res.status(200).json({
              status: 'success',
              message: `${affectedCount} notification(s) marquée(s) comme lue(s).`
-             // Vous pourriez aussi renvoyer les notifications mises à jour si le front en a besoin
-             // ou simplement un statut 204 No Content si aucune info n'est nécessaire en retour.
+             
         });
-        // Alternative: res.status(204).send();
 
     } catch (error) {
         console.error("[markAllAsRead] Error:", error);
@@ -152,4 +144,3 @@ exports.markOneAsRead = async (req, res, next) => {
     }
 };
 
-// Ajoutez d'autres fonctions si nécessaire (ex: supprimer une notification)

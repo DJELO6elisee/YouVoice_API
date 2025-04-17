@@ -13,11 +13,11 @@ module.exports = {
         type: Sequelize.UUID,
         allowNull: false,
         references: {
-          model: 'users', // Nom de la table référencée
+          model: 'users', 
           key: 'id',
         },
         onUpdate: 'CASCADE',
-        onDelete: 'CASCADE', // Important: que faire si l'utilisateur est supprimé ?
+        onDelete: 'CASCADE', 
       },
       audio_url: {
         type: Sequelize.STRING,

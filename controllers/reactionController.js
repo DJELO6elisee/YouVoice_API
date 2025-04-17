@@ -1,10 +1,9 @@
-// controllers/reactionController.js
 'use strict';
 
 // Importer les modèles et les outils de validation
-const { Reaction, VoiceNote, User, Notification, Sequelize } = require('../models'); // <-- AJOUT Notification et Sequelize
+const { Reaction, VoiceNote, User, Notification, Sequelize } = require('../models'); 
 const { validationResult } = require('express-validator');
-const Op = Sequelize.Op; // <-- AJOUT Op
+const Op = Sequelize.Op; 
 
 // Fonction helper pour vérifier l'authentification (gardez votre version)
 const ensureAuthenticated = (req) => {
@@ -46,8 +45,7 @@ exports.addReaction = async (req, res, next) => {
                 reaction.emoji = emoji;
                 await reaction.save();
                 console.log(`[addReaction] Reaction updated for user ${userId} on note ${voiceNoteId}`);
-                 // Optionnel: Notifier pour un changement d'emoji? Probablement pas.
-            } else { // Même emoji, aucune action nécessaire côté DB réaction
+            } else { 
                  console.log(`[addReaction] Reaction already exists with same emoji.`);
             }
         } else { // Création
@@ -77,7 +75,6 @@ exports.addReaction = async (req, res, next) => {
                 console.error("[addReaction] Error creating 'like' notification:", notifError.message);
             }
         }
-        // --- FIN AJOUT NOTIFICATION ---
 
         // Récupérer TOUTES les réactions à jour pour la réponse frontend
         const updatedReactions = await Reaction.findAll({
@@ -88,20 +85,18 @@ exports.addReaction = async (req, res, next) => {
 
         res.status(statusCode).json({
             status: 'success',
-            data: { reactions: updatedReactions.map(r => r.toJSON()) } // Renvoyer la liste complète
+            data: { reactions: updatedReactions.map(r => r.toJSON()) } 
         });
 
     } catch (error) {
         console.error("[Reaction Controller Error - addReaction]:", error);
         if (error.statusCode === 401) { return res.status(401).json({ status: 'fail', message: error.message }); }
-        // ... autre gestion d'erreur ...
         next(error);
     }
 };
 
 // === Supprimer une Réaction ===
 exports.removeReaction = async (req, res, next) => {
-    // (Pas de création de notification lors de la suppression d'une réaction)
     const errors = validationResult(req);
     if (!errors.isEmpty()) { /* ... */ }
 
@@ -130,15 +125,13 @@ exports.removeReaction = async (req, res, next) => {
 
     } catch (error) {
         console.error("[Reaction Controller Error - removeReaction]:", error);
-        // ... gestion erreur ...
         next(error);
     }
 };
 
 // === Obtenir les réactions pour une VoiceNote spécifique ===
 exports.getReactions = async (req, res, next) => {
-     // (Pas de création de notification ici)
-    /* ... votre code existant pour getReactions ... */
+     
      try {
         const { voiceNoteId } = req.params;
         const voiceNote = await VoiceNote.count({ where: { id: voiceNoteId } });
@@ -171,8 +164,4 @@ exports.getReactions = async (req, res, next) => {
 };
 
 
-// === Export des règles de validation (inchangé) ===
-// Assurez-vous qu'elles existent et sont correctes
-exports.validateReactionData = [ /* ... */ ];
-exports.validateReactionIdParam = [ /* ... */ ];
-exports.validateVoiceNoteIdParam = [ /* ... */ ];
+

@@ -36,9 +36,9 @@ module.exports = (sequelize) => {
         key: 'id',
       },
       onUpdate: 'CASCADE',
-      onDelete: 'CASCADE', // Ou 'SET NULL' si on veut garder le signalement même si l'utilisateur est supprimé
+      onDelete: 'CASCADE', 
     },
-    voice_note_id: { // Clé étrangère (note signalée)
+    voice_note_id: { 
       type: DataTypes.UUID,
       allowNull: false,
       references: {
@@ -46,11 +46,11 @@ module.exports = (sequelize) => {
         key: 'id',
       },
       onUpdate: 'CASCADE',
-      onDelete: 'CASCADE', // Important : si la note est supprimée, les signalements associés le sont aussi
+      onDelete: 'CASCADE', 
     },
     reason: {
       type: DataTypes.TEXT,
-      allowNull: false, // La raison est obligatoire
+      allowNull: false, 
     },
     status: {
       type: DataTypes.ENUM('pending', 'reviewed', 'resolved'),
@@ -62,15 +62,9 @@ module.exports = (sequelize) => {
     sequelize,
     modelName: 'Report',
     tableName: 'reports',
-    timestamps: true, // Active createdAt et updatedAt
+    timestamps: true, 
     underscored: true,
-    // Optionnel: Index unique pour éviter qu'un user signale plusieurs fois la même note ?
-    // indexes: [
-    //   {
-    //     unique: true,
-    //     fields: ['user_id', 'voice_note_id']
-    //   }
-    // ]
+    
   });
   return Report;
 };

@@ -17,7 +17,7 @@ module.exports = {
           key: 'id',
         },
         onUpdate: 'CASCADE',
-        onDelete: 'CASCADE', // Ou SET NULL
+        onDelete: 'CASCADE', 
       },
       voice_note_id: {
         type: Sequelize.UUID,
@@ -27,7 +27,7 @@ module.exports = {
           key: 'id',
         },
         onUpdate: 'CASCADE',
-        onDelete: 'CASCADE', // Important
+        onDelete: 'CASCADE', 
       },
       reason: {
         type: Sequelize.TEXT,
@@ -52,9 +52,8 @@ module.exports = {
     // Ajouter des index
     await queryInterface.addIndex('reports', ['user_id']);
     await queryInterface.addIndex('reports', ['voice_note_id']);
-    await queryInterface.addIndex('reports', ['status']); // Index sur status pour filtrer/trier
-    // Optionnel: Index unique comme défini dans le modèle si nécessaire
-    // await queryInterface.addIndex('reports', ['user_id', 'voice_note_id'], { unique: true, name: 'unique_user_voicenote_report' });
+    await queryInterface.addIndex('reports', ['status']); 
+    
   },
   async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('reports');

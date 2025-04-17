@@ -27,16 +27,26 @@ module.exports = (sequelize) => {
         foreignKey: 'user_id',
         as: 'shares',
       });
-      User.hasMany(models.Report, { // Assurez-vous que le modèle Report existe
+      User.hasMany(models.Report, { 
         foreignKey: 'user_id',
-        as: 'reports', // Signalements faits par cet utilisateur
+        as: 'reports', 
       });
-       // Si un Report peut concerner un User (ex: signaler un utilisateur)
-       // User.hasMany(models.Report, { foreignKey: 'reported_user_id', as: 'reportedAgainst' });
+      User.belongsToMany(models.Conversation, {
+        through: 'conversation_participants',
+        foreignKey: 'user_id', 
+        otherKey: 'conversation_id',
+        as: 'conversations',
+      });
+
+      // Un utilisateur envoie plusieurs messages
+      User.hasMany(models.Message, {
+        foreignKey: 'sender_id',
+        as: 'sentMessages',
+      });
+       
     }
   }
   User.init({
-    // --- Champs Existants ---
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
@@ -82,32 +92,27 @@ module.exports = (sequelize) => {
       allowNull: true,
     },
 
-    // ====> CHAMPS AJOUTÉS (Maintenant à l'intérieur de l'objet init) <====
     isAdmin: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: false, // Très important pour la sécurité
-      field: 'is_admin',   // Nom de colonne snake_case
+      defaultValue: false, 
+      field: 'is_admin',   
     },
     isActive: {
      type: DataTypes.BOOLEAN,
      allowNull: false,
-     defaultValue: true, // Actif par défaut
-     field: 'is_active',   // Nom de colonne snake_case
+     defaultValue: true, 
+     field: 'is_active',   
    },
-   // ====> FIN DES CHAMPS AJOUTÉS <====
-
-    // createdAt et updatedAt sont ajoutés automatiquement par timestamps: true
-    // mais sont définis implicitement avec les colonnes created_at et updated_at
-    // à cause de underscored: true
+   
 
   }, {
     // Options du modèle
-    sequelize,          // Instance Sequelize
-    modelName: 'User',  // Nom du modèle en CamelCase
-    tableName: 'users', // Nom de la table en snake_case
-    timestamps: true,   // Ajoute createdAt et updatedAt
-    underscored: true,  // Utilise snake_case pour les clés étrangères et les noms de champs (ex: isAdmin -> is_admin)
+    sequelize,          
+    modelName: 'User',  
+    tableName: 'users', 
+    timestamps: true,   
+    underscored: true,  
   });
   return User;
 };

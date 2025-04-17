@@ -38,14 +38,11 @@ module.exports = {
         type: Sequelize.DATE,
         defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       }
-      // Pas d'updated_at ici si désactivé dans le modèle
     });
     // Ajouter des index
     await queryInterface.addIndex('reactions', ['user_id']);
     await queryInterface.addIndex('reactions', ['voice_note_id']);
-    // Optionnel: Index unique comme défini dans le modèle si nécessaire
-    // await queryInterface.addIndex('reactions', ['user_id', 'voice_note_id', 'emoji'], { unique: true, name: 'unique_user_voicenote_emoji_reaction' });
-     // Ou si une seule réaction par user/note :
+    
      await queryInterface.addIndex('reactions', ['user_id', 'voice_note_id'], { unique: true, name: 'unique_user_voicenote_reaction' });
   },
   async down(queryInterface, Sequelize) {

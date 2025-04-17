@@ -1,4 +1,3 @@
-// controllers/authController.js
 'use strict';
 
 const bcrypt = require('bcryptjs');
@@ -10,16 +9,13 @@ const unlinkAsync = promisify(fs.unlink);
 
 const db = require('../models');
 // Extraire les modèles et l'instance/classe Sequelize depuis 'db'
-const { User, VoiceNote, Report, Comment, Sequelize } = db;
-const sequelize = db.sequelize; // Récupère l'INSTANCE sequelize
-const Op = Sequelize.Op; // Récupère la CLASSE Sequelize.Op
-// ===> FIN MODIFICATION IMPORTATION <===
+const { User, VoiceNote, Report, Share, Reaction, Comment, Sequelize } = db;
+const sequelize = db.sequelize; 
+const Op = Sequelize.Op; 
 
 // Vérification au démarrage (optionnel mais utile)
 if (!sequelize || typeof sequelize.getDialect !== 'function') {
     console.error("ERREUR CRITIQUE: L'instance sequelize n'a pas été importée correctement depuis ../models !");
-    // Vous pourriez vouloir arrêter le processus ici dans un cas réel
-    // process.exit(1);
 } else {
     console.log("[authController] Instance sequelize importée avec succès. Dialecte:", sequelize.getDialect());
 }
@@ -35,9 +31,7 @@ exports.register = async (req, res, next) => {
         }
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
-        // Assurez-vous que les champs correspondent à votre modèle User (ex: pas de isActive par défaut ici)
         const newUser = await User.create({ username, email, password: hashedPassword });
-        // Exclure le mot de passe de la réponse
         const userResponse = { ...newUser.toJSON() };
         delete userResponse.password;
         res.status(201).json({ success: true, message: 'User registered successfully.', user: userResponse });
@@ -46,7 +40,7 @@ exports.register = async (req, res, next) => {
         if (error.name === 'SequelizeValidationError') {
              return res.status(400).json({ success: false, message: 'Validation error.', errors: error.errors.map(e => ({ msg: e.message, path: e.path })) });
         }
-        // Utiliser next pour le gestionnaire d'erreurs global
+        // next pour le gestionnaire d'erreurs global
         next(error);
     }
 };
@@ -69,16 +63,12 @@ exports.login = async (req, res, next) => {
         }
         console.log(`[Login] Password matched for user: ${user.id}`);
 
-        // ===> MODIFICATION IMPORTANTE: Inclure le statut admin dans le payload JWT <===
         const payload = {
             user: {
               id: user.id,
-              // Assurez-vous que le nom 'isAdmin' correspond à votre modèle User
-              // Si vous utilisez 'role', mettez 'role: user.role' à la place
               isAdmin: user.isAdmin
             }
         };
-        // ===> FIN MODIFICATION JWT PAYLOAD <===
 
         const secret = process.env.JWT_SECRET;
         const expiresIn = process.env.JWT_EXPIRES_IN || '1h';
@@ -114,7 +104,7 @@ exports.getMe = async (req, res, next) => {
             return res.status(401).json({ status: 'fail', message: 'Non autorisé: Impossible d\'identifier l\'utilisateur.' });
         }
         const userId = req.user.id;
-        // Récupérer l'utilisateur SANS le mot de passe
+        // Récupère l'utilisateur SANS le mot de passe
         const user = await User.findByPk(userId, { attributes: { exclude: ['password'] } });
         if (!user) {
             // Token valide mais utilisateur supprimé entre temps ?
@@ -129,8 +119,6 @@ exports.getMe = async (req, res, next) => {
 
 // --- Fonction pour mettre à jour l'utilisateur connecté (/me) ---
 exports.updateMe = async (req, res, next) => {
-    // ... (Garder votre code de mise à jour de profil existant et fonctionnel) ...
-    // Assurez-vous qu'il utilise bien 'req.user.id' et gère l'upload d'avatar si nécessaire
      console.log('--- updateMe Controller Start ---');
     if (!req.user || !req.user.id) { return res.status(401).json({ status: 'fail', message: 'Auth requise.' }); }
     const userId = req.user.id;
@@ -170,10 +158,6 @@ exports.updateMe = async (req, res, next) => {
     }
 };
 
-
-// =======================================
-// === NOUVELLES FONCTIONS ADMIN       ===
-// =======================================
 
 // --- Lister TOUS les Utilisateurs (Admin) ---
 exports.getAllUsers = async (req, res, next) => {
@@ -252,8 +236,8 @@ exports.getAdminStats = async (req, res, next) => {
      try {
         const [userCount, voiceNoteCount, pendingReportCount] = await Promise.all([
             User.count(),
-            VoiceNote.count(), // Assurez-vous que VoiceNote est importé
-            Report.count({ where: { status: 'pending' }}) // Assurez-vous que Report est importé
+            VoiceNote.count(), 
+            Report.count({ where: { status: 'pending' }}) 
         ]);
         const statsData = { totalUsers: userCount, totalVoiceNotes: voiceNoteCount, pendingReports: pendingReportCount };
         console.log("[Admin - getAdminStats] Stats calculated:", statsData);
@@ -279,17 +263,16 @@ exports.getUserStatsOverTime = async (req, res, next) => {
         const usersByMonth = await User.findAll({
             attributes: [
                 [dateFormater, 'month'], // Alias 'month' pour la date formatée YYYY-MM
-                [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'] // Compter les utilisateurs
+                [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'] 
             ],
             where: {
-                // Filtrer sur les 12 derniers mois (utilise le nom de colonne snake_case)
                 created_at: { [Op.gte]: twelveMonthsAgo }
             },
-            // Grouper par l'expression de formatage de date
+            // Groupement par l'expression de formatage de date
             group: [dateFormater],
-             // Trier par l'expression de formatage de date
+             // Trie par l'expression de formatage de date
             order: [[dateFormater, 'ASC']],
-            raw: true // Renvoyer des objets JSON simples
+            raw: true // Renvoi des objets JSON simples
         });
 
         // Formater les résultats pour Chart.js
@@ -300,12 +283,11 @@ exports.getUserStatsOverTime = async (req, res, next) => {
 
         res.status(200).json({
             status: 'success',
-            data: { labels, values } // Envoyer les données formatées
+            data: { labels, values } // Envoi les données formatées
         });
 
     } catch(error) {
         console.error("[Admin - getUserStatsOverTime - MySQL] Error:", error);
-        // Log l'erreur SQL originale si disponible (utile pour déboguer MySQL)
         if (error.original) {
              console.error("[Admin - getUserStatsOverTime - MySQL] Original SQL Error:", error.original.sqlMessage || error.original);
         }
@@ -375,12 +357,7 @@ exports.getActivityStatsOverTime = async (req, res, next) => {
         }
 
         console.log(`[Admin - getActivityStatsOverTime] Data prepared for ${labels.length} days.`);
-        // Optionnel: logguer les données finales si besoin de déboguer le formatage
-        // console.log("[Admin - getActivityStatsOverTime] Final labels:", labels);
-        // console.log("[Admin - getActivityStatsOverTime] Final usersData:", usersData);
-        // console.log("[Admin - getActivityStatsOverTime] Final notesData:", notesData);
-
-        // --- Réponse API ---
+        
         res.status(200).json({
             status: 'success',
             data: {
@@ -408,7 +385,7 @@ exports.getAllReports = async (req, res, next) => {
   try {
     const { status, page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC' } = req.query;
     const where = {};
-    const validStatuses = ['pending', 'resolved', 'rejected']; // Simplifié, ou Report.getAttributes()...
+    const validStatuses = ['pending', 'resolved', 'rejected']; 
     if (status && validStatuses.includes(status)) { where.status = status; }
     else if (status) { return res.status(400).json(/* ... */); }
 
@@ -426,11 +403,9 @@ exports.getAllReports = async (req, res, next) => {
       include: [
         { model: User, as: 'reporter', attributes: ['id', 'username', 'avatar'] },
         {
-          model: VoiceNote, as: 'reportedVoiceNote', required: false, // Ne pas planter si note supprimée
+          model: VoiceNote, as: 'reportedVoiceNote', required: false, 
           include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }]
         },
-        // Ajouter include pour 'resolvedBy' si vous avez cette colonne/association
-        // { model: User, as: 'resolvedBy', attributes: ['id', 'username'], required: false }
       ],
       order: orderClause,
       limit: parseInt(limit, 10),
@@ -450,16 +425,15 @@ exports.getAllReports = async (req, res, next) => {
   }
 };
 
-// === Mettre à jour un signalement (POUR ADMIN) ===
 exports.updateReportStatus = async (req, res, next) => {
   // La vérification isAdmin est faite par le middleware
-  const reportId = req.params.reportId; // Utiliser un nom de paramètre clair
+  const reportId = req.params.reportId; 
   const adminUserId = req.user.id;
   const { status, resolution } = req.body;
   console.log(`[Admin - updateReportStatus] Admin ${adminUserId} updating report ${reportId}. Body:`, req.body);
 
   try {
-    const validStatuses = ['pending', 'resolved', 'rejected']; // Simplifié
+    const validStatuses = ['pending', 'resolved', 'rejected']; 
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({ status: 'fail', message: `Statut invalide: ${status}.` });
     }
@@ -473,8 +447,8 @@ exports.updateReportStatus = async (req, res, next) => {
     const updateData = { status: status, resolution: resolution };
     // Enregistrer qui a résolu et quand
     if (['resolved', 'rejected'].includes(status)) {
-        updateData.resolved_by_id = adminUserId; // Assurez-vous que cette colonne existe
-        updateData.resolved_at = new Date();    // Assurez-vous que cette colonne existe
+        updateData.resolved_by_id = adminUserId; 
+        updateData.resolved_at = new Date();    
     }
 
     const [affectedRows] = await Report.update(updateData, { where: { id: reportId } });
@@ -487,7 +461,7 @@ exports.updateReportStatus = async (req, res, next) => {
          include: [
             { model: User, as: 'reporter', attributes: ['id', 'username', 'avatar'] },
         {
-          model: VoiceNote, as: 'reportedVoiceNote', required: false, // Ne pas planter si note supprimée
+          model: VoiceNote, as: 'reportedVoiceNote', required: false, 
           include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }]
         },
          ]
@@ -505,7 +479,7 @@ exports.updateReportStatus = async (req, res, next) => {
 
 // Optionnel: Fonction pour supprimer du contenu signalé
 exports.deleteReportedContent = async (req, res, next) => {
-    const { itemType, itemId } = req.params; // ex: /api/admin/content/voice-note/uuid-de-la-note
+    const { itemType, itemId } = req.params; 
     const adminUserId = req.user.id;
     console.log(`[Admin - deleteReportedContent] Admin ${adminUserId} deleting ${itemType} ID ${itemId}`);
 
@@ -514,7 +488,7 @@ exports.deleteReportedContent = async (req, res, next) => {
         if (itemType === 'voice-note') {
              modelToDelete = VoiceNote;
         } else if (itemType === 'comment') {
-             modelToDelete = Comment; // Assurez-vous d'importer Comment
+             modelToDelete = Comment; 
         } else {
              return res.status(400).json({ status: 'fail', message: 'Type de contenu invalide.'});
         }
@@ -524,7 +498,6 @@ exports.deleteReportedContent = async (req, res, next) => {
             return res.status(404).json({ status: 'fail', message: 'Contenu non trouvé.'});
         }
 
-        // Logique de suppression (ex: supprimer le fichier audio avant de détruire l'enregistrement DB)
         if (itemType === 'voice-note' && item.audio_url) {
              // ... (logique fs.unlink comme dans deleteVoiceNote) ...
              const absolutePath = path.join(__dirname, '..', 'public', item.audio_url);
@@ -545,5 +518,106 @@ exports.deleteReportedContent = async (req, res, next) => {
     } catch (error) {
         console.error(`[Admin - deleteReportedContent] Error deleting ${itemType} ID ${itemId}:`, error);
         next(error);
+    }
+};
+
+
+
+exports.getDashboardData = async (req, res, next) => {
+    try {
+        // 1. Vérifier l'authentification et obtenir l'ID utilisateur
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ status: 'fail', message: 'Authentification requise.' });
+        }
+
+        // 2. Trouver toutes les IDs des VoiceNotes créées par cet utilisateur
+        const userVoiceNotes = await VoiceNote.findAll({
+            where: { user_id: userId },
+            attributes: ['id'] // On n'a besoin que des IDs
+        });
+        const userVoiceNoteIds = userVoiceNotes.map(vn => vn.id);
+
+        let likeCount = 0;
+        let commentCount = 0;
+        let shareCount = 0;
+        let activityData = []; 
+
+        // 3. Compter les réactions, commentaires et partages sur ces notes (si l'utilisateur a des notes)
+        if (userVoiceNoteIds.length > 0) {
+            likeCount = await Reaction.count({
+                where: {
+                    voice_note_id: { [Op.in]: userVoiceNoteIds }
+                }
+            });
+
+            commentCount = await Comment.count({
+                where: {
+                    voice_note_id: { [Op.in]: userVoiceNoteIds }
+                }
+            });
+
+            // Compter les partages basés sur la table Share
+            shareCount = await Share.count({
+                where: {
+                    voice_note_id: { [Op.in]: userVoiceNoteIds }
+                    // Optionnel: Exclure les propres partages de l'utilisateur ?
+                }
+            });
+
+            try {
+                 const reactionsByMonth = await Reaction.findAll({
+                    where: {
+                        voice_note_id: { [Op.in]: userVoiceNoteIds },
+                        createdAt: { // Filtrer sur une période, ex: 12 derniers mois
+                            [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 12))
+                        }
+                    },
+                    attributes: [
+                         // Fonction pour extraire l'année et le mois
+                         [Sequelize.fn('DATE_FORMAT', Sequelize.col('created_at'), '%Y-%m'), 'month'],
+                         // Compter les réactions
+                         [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
+                    ],
+                    group: ['month'],
+                    order: [[Sequelize.literal('month'), 'ASC']] // Trier par mois
+                 });
+
+                 // Formater pour le graphique (ex: { label: 'Jan', actions: 5 })
+                 const monthNames = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+                 activityData = reactionsByMonth.map(row => {
+                    const data = row.get(); 
+                    const [year, month] = data.month.split('-');
+                    return {
+                        label: `${monthNames[parseInt(month, 10) - 1]}`, 
+                        actions: parseInt(data.count, 10) || 0
+                    };
+                 });
+
+                 
+            } catch(activityError) {
+                console.error("Error calculating activity data:", activityError);
+                // Continuer sans les données d'activité en cas d'erreur
+                activityData = [];
+            }
+
+        }
+
+        // 5. Renvoyer les données formatées
+        res.status(200).json({
+            status: 'success',
+            data: {
+                stats: {
+                    likes: likeCount,
+                    comments: commentCount,
+                    shares: shareCount
+                },
+                activity: activityData
+            }
+        });
+
+    } catch (error) {
+        console.error("[getDashboardData Error]:", error);
+        next(error); // Passer à la gestion d'erreur Express
     }
 };

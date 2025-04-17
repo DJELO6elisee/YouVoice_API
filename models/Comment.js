@@ -50,16 +50,15 @@ module.exports = (sequelize) => {
     },
     text: {
       type: DataTypes.TEXT,
-      allowNull: false, // Le texte est requis (sauf si audio_url est fourni ?) - A adapter selon la logique métier
+      allowNull: false, 
     },
     audio_url: {
       type: DataTypes.STRING,
-      allowNull: true, // Optionnel
+      allowNull: true,
       validate: {
         isUrl: true,
       },
     },
-    // createdAt et updatedAt gérés par Sequelize
   }, {
     sequelize,
     modelName: 'Comment',

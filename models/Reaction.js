@@ -52,26 +52,18 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        // Optionnel: Valider que c'est bien un emoji standard si nécessaire
-        // is: /^\p{Emoji}$/u // Exemple de regex (peut nécessiter des ajustements)
+        
       }
     },
-    // createdAt géré par Sequelize (pas besoin d'updatedAt pour une réaction simple)
-    // La colonne `updated_at` doit exister dans la BDD à cause de timestamps:true
+    
   }, {
     sequelize,
     modelName: 'Reaction',
     tableName: 'reactions',
-    timestamps: true, // Active createdAt et updatedAt (Sequelize s'attend aux deux colonnes en BDD)
-    updatedAt: false, // Désactive la gestion de la valeur de updatedAt par Sequelize
-    underscored: true, // Traduit camelCase en snake_case pour les colonnes BDD
-    // Optionnel: Ajouter un index unique pour empêcher un utilisateur de réagir plusieurs fois avec le même emoji à la même note
-    // indexes: [
-    //   {
-    //     unique: true,
-    //     fields: ['user_id', 'voice_note_id', 'emoji'] // Ou juste user_id et voice_note_id si un user ne peut réagir qu'une fois
-    //   }
-    // ]
+    timestamps: true,
+    updatedAt: false,
+    underscored: true, 
+   
   });
   return Reaction;
 };

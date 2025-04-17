@@ -20,7 +20,6 @@ exports.createComment = async (req, res, next) => {
     if (!voiceNote) { return res.status(404).json({ status: 'fail', message: 'La note vocale spécifiée n\'existe pas.' }); }
 
     const ownerId = voiceNote.user_id; // Propriétaire de la note (recipient)
-    // --- FIN VALIDATIONS ---
 
     // Créer le commentaire
     console.log(`[Create Comment] Attempting create: user_id=${userId}, voice_note_id=${voiceNoteId}`);
@@ -49,7 +48,7 @@ exports.createComment = async (req, res, next) => {
     }
     // --- FIN AJOUT NOTIFICATION ---
 
-    // Récupérer le commentaire créé avec les informations utilisateur pour la réponse
+    // Récupère le commentaire créé avec les informations utilisateur pour la réponse
     const commentWithUser = await Comment.findByPk(comment.id, {
         include: [{
             model: User,
@@ -78,15 +77,14 @@ exports.createComment = async (req, res, next) => {
 
 // === Obtenir les commentaires pour une VoiceNote spécifique ===
 exports.getComments = async (req, res, next) => {
-    // (Pas de création de notification ici)
-    /* ... votre code existant pour getComments ... */
+    
     try {
         const { voiceNoteId } = req.params;
         const voiceNoteExists = await VoiceNote.count({ where: { id: voiceNoteId } });
         if (voiceNoteExists === 0) { return res.status(404).json({ status: 'fail', message: 'Note vocale non trouvée.' }); }
 
         const comments = await Comment.findAll({
-          where: { voice_note_id: voiceNoteId }, // Assurez-vous que la clé est correcte
+          where: { voice_note_id: voiceNoteId }, 
           include: [ { model: User, as: 'user', attributes: ['id', 'username', 'avatar'] } ],
           order: [['createdAt', 'ASC']]
         });
@@ -102,14 +100,13 @@ exports.getComments = async (req, res, next) => {
 
 // === Supprimer un commentaire ===
 exports.deleteComment = async (req, res, next) => {
-    // (Pas de création de notification ici)
-    /* ... votre code existant pour deleteComment ... */
+    
      try {
-        const { id } = req.params; // ID du commentaire
+        const { id } = req.params; 
         const userId = req.user?.id;
         if (!userId) { return res.status(401).json({ status: 'fail', message: 'Auth requise.' }); }
 
-        const comment = await Comment.findOne({ where: { id: id, user_id: userId } }); // Assurez-vous que user_id est la bonne clé
+        const comment = await Comment.findOne({ where: { id: id, user_id: userId } }); 
         if (!comment) { return res.status(404).json({ status: 'fail', message: 'Commentaire non trouvé ou action non autorisée.' }); }
 
         await comment.destroy();

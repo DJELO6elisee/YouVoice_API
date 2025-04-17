@@ -483,4 +483,13 @@ safeRoute('patch',
      authController.deleteReportedContent // Utilise adminReportController
  );
 
+
+ safeRoute('get',
+    '/dashboard',
+    authMiddleware, // 1. Vérifie connexion
+
+    authController.getDashboardData
+);
+
+
 module.exports = router;

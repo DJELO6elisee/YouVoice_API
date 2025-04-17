@@ -19,7 +19,7 @@ exports.createReport = async (req, res, next) => {
     if (!voiceNoteId) {
         return res.status(400).json({ status: 'fail', message: 'L\'ID de la note vocale est requis (voiceNoteId).' });
     }
-    if (!reason || reason.trim().length < 5) { // Minimum 5 caractères pour la raison
+    if (!reason || reason.trim().length < 2) { // Minimum 5 caractères pour la raison
         return res.status(400).json({ status: 'fail', message: 'La raison du signalement doit contenir au moins 5 caractères.' });
     }
 
@@ -105,7 +105,6 @@ exports.getReports = async (req, res, next) => {
     const sortField = sortMapping[sortBy] || 'created_at'; // Défaut à created_at
     const sortDirection = ['ASC', 'DESC'].includes(order.toUpperCase()) ? order.toUpperCase() : 'DESC';
     orderClause.push([sortField, sortDirection]);
-    // Ajouter un tri secondaire par ID pour la stabilité
     if (sortField !== 'id') {
         orderClause.push(['id', 'DESC']);
     }
@@ -114,34 +113,33 @@ exports.getReports = async (req, res, next) => {
     // Calcul de l'offset
     const offset = (page - 1) * limit;
 
-    // Récupérer les signalements avec pagination, tri et détails associés
+    // Récupère les signalements avec pagination, tri et détails associés
     const { count, rows: reports } = await Report.findAndCountAll({
       where,
       include: [
         {
           model: User,
-          as: 'reporter', // Vérifier cet alias dans Report.associate
+          as: 'reporter', 
           attributes: ['id', 'username', 'avatar'] // Exclure email si non nécessaire
         },
         {
           model: VoiceNote,
-          as: 'reportedVoiceNote', // Vérifier cet alias
-          attributes: ['id', 'description', 'audio_url', 'user_id'], // Ajouter user_id de la note
-          required: false, // Garder le rapport même si la note a été supprimée ? (ou mettre true pour exclure)
-          include: [ // Inclure le créateur de la note signalée
+          as: 'reportedVoiceNote', 
+          attributes: ['id', 'description', 'audio_url', 'user_id'], 
+          required: false, 
+          include: [ 
             {
               model: User,
-              as: 'user', // Vérifier l'alias User dans VoiceNote.associate
+              as: 'user', 
               attributes: ['id', 'username', 'avatar']
             }
           ]
         },
-        // Inclure d'autres éléments si nécessaire (ex: Comment si on signale des commentaires)
       ],
-      order: orderClause, // Appliquer le tri
+      order: orderClause, 
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
-      distinct: true // Peut être nécessaire avec include hasMany
+      distinct: true 
     });
      console.log(`[getReports] Found ${count} reports, returning ${reports.length} for page ${page}.`);
 
@@ -192,8 +190,7 @@ exports.updateReport = async (req, res, next) => {
     // Mettre à jour 'resolution' seulement s'il est fourni (permet de l'effacer avec null ou "")
     if (resolution !== undefined) updateData.resolution = resolution;
 
-    // Si le statut change vers un état final, enregistrer l'admin et la date
-    // Utiliser les noms de colonnes snake_case
+    
     if (['resolved', 'rejected'].includes(status) && report.status !== status) {
         updateData.resolved_by_id = adminUserId; // Nom de colonne DB
         updateData.resolved_at = new Date();   // Nom de colonne DB
@@ -202,7 +199,6 @@ exports.updateReport = async (req, res, next) => {
     // Effectuer la mise à jour
     const [numberOfAffectedRows] = await Report.update(updateData, {
         where: { id: reportId },
-        // returning: true, // Peut être utile avec certains dialectes pour récupérer l'objet mis à jour
     });
 
     if (numberOfAffectedRows === 0) {
@@ -214,10 +210,9 @@ exports.updateReport = async (req, res, next) => {
 
     // Recharger le rapport mis à jour pour la réponse
      const updatedReport = await Report.findByPk(reportId, {
-         include: [ // Inclure les mêmes associations que getReports pour la cohérence
+         include: [ 
             { model: User, as: 'reporter', attributes: ['id', 'username', 'avatar'] },
             { model: VoiceNote, as: 'reportedVoiceNote', include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }] },
-            // { model: User, as: 'resolvedBy', attributes: ['id', 'username'] } // Ajout pour voir qui a résolu
          ]
      });
 

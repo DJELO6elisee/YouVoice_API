@@ -85,7 +85,7 @@ module.exports = (sequelize) => {
     read: { // Statut de lecture
       type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: false, // Non lue par défaut
+      defaultValue: false, 
     },
     // Clés étrangères vers les objets concernés (optionnelles)
     voiceNoteId: {
@@ -93,7 +93,7 @@ module.exports = (sequelize) => {
       allowNull: true,
       references: { model: 'voice_notes', key: 'id' },
       onUpdate: 'CASCADE',
-      onDelete: 'CASCADE', // Si la note est supprimée, la notif associée l'est aussi
+      onDelete: 'CASCADE', 
     },
     commentId: {
       type: DataTypes.UUID,
@@ -121,12 +121,12 @@ module.exports = (sequelize) => {
     sequelize,
     modelName: 'Notification',
     tableName: 'notifications',
-    timestamps: true, // Garder createdAt et updatedAt
+    timestamps: true, 
     underscored: true,
     // Ajouter des index pour améliorer les requêtes fréquentes
     indexes: [
-        { fields: ['recipient_user_id', 'read', 'created_at'] }, // Pour récupérer les notifs non lues d'un user
-        { fields: ['recipient_user_id', 'created_at'] }        // Pour récupérer toutes les notifs d'un user
+        { fields: ['recipient_user_id', 'read', 'created_at'] },
+        { fields: ['recipient_user_id', 'created_at'] }     
     ]
   });
   return Notification;

@@ -24,7 +24,7 @@ exports.createVoiceNote = [
         if (req.file?.path) await fs.unlink(req.file.path).catch(err => console.error("Error deleting file after duration validation fail:", err));
         return res.status(400).json({ status: 'fail', message: 'La durée doit être un nombre entier positif.' });
       }
-      const maxDuration = 300;
+      const maxDuration = 60;
       if (parsedDuration > maxDuration) {
         if (req.file?.path) await fs.unlink(req.file.path).catch(err => console.error("Error deleting file after duration validation fail:", err));
         return res.status(400).json({ status: 'fail', message: `La durée ne peut pas dépasser ${maxDuration} secondes.` });
@@ -33,18 +33,16 @@ exports.createVoiceNote = [
       const voiceNote = await VoiceNote.create(voiceNoteData);
       const createdVoiceNote = await VoiceNote.findByPk(voiceNote.id, { include: [{ model: User, as: 'user', attributes: ['id', 'username', 'avatar'] }] });
       if (!createdVoiceNote) {
-          // Should not happen often, but handle it
            console.warn(`[CreateVoiceNote] Failed to retrieve created note ID ${voiceNote.id} with user info immediately.`);
            return res.status(201).json({ status: 'partial_success', message: 'Note vocale créée, mais impossible de récupérer les détails complets immédiatement.', data: { voiceNote: voiceNote.toJSON() } });
       }
       res.status(201).json({ status: 'success', message: 'Note vocale créée avec succès.', data: { voiceNote: createdVoiceNote.toJSON() } }); // Use toJSON()
     } catch (error) {
       console.error("[CreateVoiceNote] Error:", error);
-      // Try to delete uploaded file on error
       if (req.file?.path) {
           await fs.unlink(req.file.path).catch(err => console.error("Error deleting file after create error:", err));
       }
-      next(error); // Pass error to global error handler
+      next(error); 
     }
   }
 ];
@@ -56,12 +54,11 @@ exports.createVoiceNote = [
 exports.getVoiceNoteById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    // ===> AJOUT INCLUDE Comment et User imbriqué ici aussi pour la cohérence <===
     const voiceNote = await VoiceNote.findByPk(id, {
         include: [
             { model: User, as: 'user', attributes: ['id', 'username', 'avatar'] },
             { model: Reaction, as: 'reactions', attributes: ['id', 'user_id', 'emoji'], required: false },
-            { // Inclure les commentaires pour la vue détail
+            { 
                 model: Comment,
                 as: 'comments',
                 attributes: ['id', 'text', 'user_id', 'createdAt'],
@@ -117,7 +114,6 @@ exports.deleteVoiceNote = async (req, res, next) => {
 exports.getVoiceNotes = async (req, res, next) => {
   console.log("[getVoiceNotes - Main Feed] Start processing request.");
   try {
-    // ===> AJOUT DE 'search' DANS LA DESTRUCTURATION <===
     const { page = 1, limit = 10, sortBy = 'createdAt', order = 'DESC', search } = req.query;
     const offset = (page - 1) * limit;
 
@@ -144,7 +140,7 @@ exports.getVoiceNotes = async (req, res, next) => {
     }
     console.log("[getVoiceNotes - Main Feed] Order clause:", orderClause);
 
-    // ===> NOUVEAU : Construction de la clause WHERE pour la recherche <===
+    // Construction de la clause WHERE pour la recherche 
     let whereClause = {}; // Commence par un objet vide
     if (search && search.trim() !== '') {
       const searchTerm = `%${search.trim()}%`; // Ajoute les wildcards pour LIKE
@@ -162,7 +158,7 @@ exports.getVoiceNotes = async (req, res, next) => {
 
     // --- Requête Principale AVEC LA CLAUSE WHERE ---
     const findOptions = {
-      where: whereClause, // <<< APPLIQUER LA CLAUSE WHERE ICI
+      where: whereClause, 
       attributes: {
           include: [ [reactionCountLiteral, 'reactionCount'] ],
       },
@@ -170,9 +166,9 @@ exports.getVoiceNotes = async (req, res, next) => {
           // L'include User est essentiel pour la recherche par username
           {
               model: User,
-              as: 'user', // Doit correspondre à l'alias dans VoiceNote.associations
+              as: 'user', 
               attributes: ['id', 'username', 'avatar'],
-              required: !!(search) // Mettre à true seulement si on recherche activement par utilisateur
+              required: !!(search) 
           },
           { model: Reaction, as: 'reactions', attributes: ['id', 'user_id', 'emoji'], required: false },
           {
@@ -189,22 +185,18 @@ exports.getVoiceNotes = async (req, res, next) => {
       order: orderClause,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
-      distinct: true, // Important pour count avec includes
-      // subQuery: false, // Important pour que LIMIT/OFFSET fonctionne correctement avec les includes et le where sur l'include
+      distinct: true, 
     };
 
     // Exécute la requête pour obtenir les lignes et le compte total filtré
     const { count, rows: voiceNotes } = await VoiceNote.findAndCountAll(findOptions);
 
-    // Le `count` retourné par findAndCountAll avec `distinct: true` et `where` sur include peut parfois être complexe.
-    // Pour un comptage total plus fiable *respectant le filtre*, on refait un count dédié.
     const totalItems = await VoiceNote.count({
         where: whereClause,
-        include: [ // Doit inclure le User si whereClause le référence
+        include: [ 
             { model: User, as: 'user', required: !!(search) }
         ],
-        distinct: true, // Compter les VoiceNote distinctes
-        // col: 'VoiceNote.id' // Spécifier la colonne peut aider dans certains cas complexes
+        distinct: true, 
     });
 
 
@@ -213,7 +205,7 @@ exports.getVoiceNotes = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       results: voiceNotes.length,
-      totalVoiceNotes: totalItems, // Utilise le compte total filtré
+      totalVoiceNotes: totalItems,
       totalPages: Math.ceil(totalItems / limit),
       currentPage: parseInt(page, 10),
       data: {
@@ -242,11 +234,10 @@ exports.getMyVoiceNotes = async (req, res, next) => {
     const offset = (page - 1) * limit;
     // Ajoutez les includes nécessaires ici aussi si besoin (commentaires, réactions?)
     const { count, rows: voiceNotes } = await VoiceNote.findAndCountAll({
-        where: { user_id: userId }, // *** LE FILTRE IMPORTANT ***
+        where: { user_id: userId },
         include: [
             // Ajoutez les includes pour réactions/commentaires si nécessaire pour cette vue
             { model: Reaction, as: 'reactions', attributes: ['id', 'user_id', 'emoji'], required: false },
-            // { model: Comment, as: 'comments', ... include: [{ model: User, as: 'user' ...}] ... } // Si besoin
         ],
         order: [[sortBy === 'createdAt' ? 'created_at' : sortBy, order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC']],
         limit: parseInt(limit, 10),

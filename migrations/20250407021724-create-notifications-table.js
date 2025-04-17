@@ -12,89 +12,88 @@ module.exports = {
         primaryKey: true,
         allowNull: false,
       },
-      recipient_user_id: { // Nom de colonne 'underscored'
+      recipient_user_id: { 
         type: Sequelize.UUID,
         allowNull: false,
         references: {
-          model: 'users', // Nom de la table référencée
+          model: 'users', 
           key: 'id',
         },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
-      actor_user_id: { // Nom de colonne 'underscored'
+      actor_user_id: { 
         type: Sequelize.UUID,
-        allowNull: true, // Peut être NULL (notifications système)
+        allowNull: true, 
         references: {
           model: 'users',
           key: 'id',
         },
         onUpdate: 'CASCADE',
-        onDelete: 'SET NULL', // Garde la notif si l'acteur est supprimé
+        onDelete: 'SET NULL', 
       },
       type: {
-        type: Sequelize.ENUM( // Définit le type ENUM
+        type: Sequelize.ENUM( 
           'like',
           'comment',
           'share',
           'follow',
           'mention',
           'system'
-          // Ajoutez d'autres types ici si définis dans le modèle
         ),
         allowNull: false,
       },
       read: {
         type: Sequelize.BOOLEAN,
         allowNull: false,
-        defaultValue: false, // Non lue par défaut
+        defaultValue: false, 
       },
-      voice_note_id: { // Nom de colonne 'underscored'
+      voice_note_id: { 
         type: Sequelize.UUID,
-        allowNull: true, // Peut être NULL
+        allowNull: true, 
         references: {
-          model: 'voice_notes', // Nom de la table référencée
+          model: 'voice_notes', 
           key: 'id',
         },
         onUpdate: 'CASCADE',
-        onDelete: 'CASCADE', // Supprime la notif si la note est supprimée
+        onDelete: 'CASCADE', 
       },
-      comment_id: { // Nom de colonne 'underscored'
+      comment_id: { 
         type: Sequelize.UUID,
         allowNull: true,
         references: {
-          model: 'comments', // Nom de la table référencée
+          model: 'comments', 
           key: 'id',
         },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
-      reaction_id: { // Nom de colonne 'underscored'
+      reaction_id: { 
         type: Sequelize.UUID,
         allowNull: true,
         references: {
-          model: 'reactions', // Nom de la table référencée
+          model: 'reactions', 
           key: 'id',
         },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
-      share_id: { // Nom de colonne 'underscored'
+      share_id: { 
         type: Sequelize.UUID,
         allowNull: true,
         references: {
-          model: 'shares', // Nom de la table référencée
+          model: 'shares', 
           key: 'id',
         },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
-      created_at: { // Nom de colonne 'underscored'
+      created_at: { 
         allowNull: false,
         type: Sequelize.DATE,
         defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') // Valeur par défaut gérée par la DB
       },
-      updated_at: { // Nom de colonne 'underscored'
+      updated_at: { 
         allowNull: false,
         type: Sequelize.DATE,
         defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
@@ -116,9 +115,7 @@ module.exports = {
     // Puis supprimer la table
     await queryInterface.dropTable('notifications');
 
-    // Optionnel: Supprimer le type ENUM si votre base de données le nécessite (ex: PostgreSQL)
-    // await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_notifications_type";');
-
+    
     console.log("Migration 'create-notifications-table' DOWN terminée.");
   }
 };

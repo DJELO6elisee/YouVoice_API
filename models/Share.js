@@ -38,7 +38,7 @@ module.exports = (sequelize) => {
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
     },
-    voice_note_id: { // Clé étrangère (note partagée)
+    voice_note_id: { 
       type: DataTypes.UUID,
       allowNull: false,
       references: {
@@ -50,7 +50,7 @@ module.exports = (sequelize) => {
     },
     shared_to: {
       type: DataTypes.STRING,
-      allowNull: false, // Indique où/à qui le partage a été fait
+      allowNull: false, 
       comment: 'Ex: facebook, twitter, whatsapp, ou user UUID'
     },
     // createdAt géré par Sequelize
@@ -58,8 +58,8 @@ module.exports = (sequelize) => {
     sequelize,
     modelName: 'Share',
     tableName: 'shares',
-    timestamps: true, // Active createdAt
-    updatedAt: false, // Pas besoin d'updatedAt pour un partage
+    timestamps: true, 
+    updatedAt: false,
     underscored: true,
   });
   return Share;

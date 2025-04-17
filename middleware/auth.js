@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { User } = require('../models'); // Ajustez le chemin si nécessaire
+const { User } = require('../models'); 
 
 module.exports = function(req, res, next) {
     // 1. Obtenir le token de l'en-tête Authorization
@@ -37,9 +37,9 @@ module.exports = function(req, res, next) {
              return res.status(401).json({ success: false, message: 'Invalid token payload.' });
         }
 
-        req.user = decoded.user; // Maintenant req.user = { id: '...' }
+        req.user = decoded.user; 
 
-        next(); // Passer au prochain middleware ou au contrôleur
+        next(); 
 
     } catch (error) {
         console.error('Token Verification Error:', error.name, error.message);

@@ -31,15 +31,15 @@ module.exports = {
         type: Sequelize.TEXT,
         allowNull: true,
       },
-      created_at: { // Notez l'utilisation de snake_case ici
+      created_at: { 
         allowNull: false,
         type: Sequelize.DATE,
-        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'), // Défaut géré par la DB
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'), 
       },
-      updated_at: { // Notez l'utilisation de snake_case ici
+      updated_at: { 
         allowNull: false,
         type: Sequelize.DATE,
-        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'), // Défaut géré par la DB
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'), 
       }
     });
   },

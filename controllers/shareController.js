@@ -2,8 +2,8 @@
 'use strict';
 
 // Importer les modèles nécessaires
-const { Share, VoiceNote, User, Notification, Sequelize } = require('../models'); // <-- AJOUT Notification et Sequelize
-const Op = Sequelize.Op; // <-- AJOUT Op
+const { Share, VoiceNote, User, Notification, Sequelize } = require('../models'); 
+const Op = Sequelize.Op; 
 
 // === Enregistrer un Partage de Note Vocale ===
 exports.shareVoiceNote = async (req, res, next) => {
@@ -15,7 +15,6 @@ exports.shareVoiceNote = async (req, res, next) => {
     // --- Validation des entrées ---
     if (!userId) { return res.status(401).json({ status: 'fail', message: 'Authentification requise.' }); }
     if (!voiceNoteId || !sharedTo) { return res.status(400).json({ status: 'fail', message: 'Les champs voiceNoteId et sharedTo sont requis.' }); }
-    // --- Fin Validation ---
 
     // Vérifier si la VoiceNote existe et récupérer son propriétaire
     const voiceNote = await VoiceNote.findByPk(voiceNoteId);
@@ -31,7 +30,6 @@ exports.shareVoiceNote = async (req, res, next) => {
     });
     console.log(`[CreateShare] Share record created with ID: ${newShare.id}`);
 
-    // Incrémenter le compteur de partages sur la VoiceNote elle-même (si la colonne existe)
     try {
         await voiceNote.increment('shareCount', { by: 1 });
         console.log(`[CreateShare] Incremented shareCount for VoiceNote ${voiceNoteId}`);
@@ -55,7 +53,6 @@ exports.shareVoiceNote = async (req, res, next) => {
             console.error("[CreateShare] Error creating 'share' notification:", notifError.message);
         }
     }
-    // --- FIN AJOUT NOTIFICATION ---
 
     // Recharger l'objet share pour inclure l'utilisateur (pour la réponse)
     const shareWithUser = await Share.findByPk(newShare.id, {
@@ -76,15 +73,12 @@ exports.shareVoiceNote = async (req, res, next) => {
 
   } catch (error) {
      console.error("[CreateShare] Error:", error);
-     // ... gestion erreur existante ...
      next(error);
   }
 };
 
 // === Obtenir les Partages pour une Note Vocale ===
-// (Pas de création de notification ici)
 exports.getShares = async (req, res, next) => {
-    // ... votre code existant pour getShares ...
      try {
         const { voiceNoteId } = req.params;
         const { page = 1, limit = 10 } = req.query;
