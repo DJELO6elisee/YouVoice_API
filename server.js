@@ -23,9 +23,6 @@ const app = express();
 // Création du serveur HTTP à partir de l'application Express
 const server = http.createServer(app);
 
-
-
-// --- Lire et parser la variable d'environnement CORS_ORIGIN ---
 // 1. Lire la variable d'environnement, fournir une chaîne vide '' comme fallback.
 // 2. Diviser (split) par la virgule ','.
 // 3. Enlever (trim) les espaces blancs.
@@ -55,7 +52,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       // Si une origine est fournie mais n'est PAS dans la liste, bloquer
-      console.warn(`[CORS] Origine bloquée : ${origin}`); // Garder ce log est utile
+      console.warn(`[CORS] Origine bloquée : ${origin}`);
       callback(new Error('Not allowed by CORS')); 
     }
   },
@@ -70,7 +67,7 @@ app.use(cors(corsOptions));
 // --- CONFIGURATION SOCKET.IO ---
 const io = new Server(server, {
     cors: {
-        origin: allowedOrigin, // Utiliser la même origine que pour HTTP
+        origin: allowedOrigins, // Utiliser la même origine que pour HTTP
         methods: ["GET", "POST"]
     }
 });
