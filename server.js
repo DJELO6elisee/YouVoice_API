@@ -23,23 +23,49 @@ const app = express();
 // Création du serveur HTTP à partir de l'application Express
 const server = http.createServer(app);
 
-// --- CONFIGURATION CORS (pour HTTP et WebSocket) ---
-const allowedOrigin = process.env.CORS_ORIGIN || 'https://youvoice-elisee.netlify.app'; // Ou votre URL de dev
-console.log(`[CORS] Configuration: Autorisation de l'origine : ${allowedOrigin}`);
+
+
+// --- Lire et parser la variable d'environnement CORS_ORIGIN ---
+// 1. Lire la variable d'environnement, fournir une chaîne vide '' comme fallback.
+// 2. Diviser (split) par la virgule ','.
+// 3. Enlever (trim) les espaces blancs.
+// 4. Filtrer (filter) les chaînes vides.
+const allowedOriginsFromEnv = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+
+// décommentez-les pour le développement local si elles ne sont pas dans votre .env local
+const defaultAllowedOrigins = [
+    // 'http://localhost:5173',
+    // 'http://localhost:8080'
+];
+
+// C'est ICI que la variable `allowedOrigins` est définie CORRECTEMENT
+const allowedOrigins = [...new Set([...allowedOriginsFromEnv, ...defaultAllowedOrigins])];
+
+// Afficher les origines finalement autorisées (utile pour le débogage au démarrage)
+console.log('[CORS] Origines autorisées configurées :', allowedOrigins);
+
+// --- Configuration CORS utilisant le tableau généré `allowedOrigins` ---
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigin === '*' || allowedOrigin === origin) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-       console.warn(`[CORS] Origine bloquée : ${origin} (Seule autorisée : ${allowedOrigin})`);
-       callback(new Error('Not allowed by CORS'));
+      // Si une origine est fournie mais n'est PAS dans la liste, bloquer
+      console.warn(`[CORS] Origine bloquée : ${origin}`); // Garder ce log est utile
+      callback(new Error('Not allowed by CORS')); 
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], 
+  allowedHeaders: ['Content-Type', 'Authorization'], 
+  credentials: true 
 };
-app.use(cors(corsOptions)); // Appliquer CORS aux requêtes HTTP
+
+// Appliquer le middleware CORS à toutes les routes
+app.use(cors(corsOptions));
 
 // --- CONFIGURATION SOCKET.IO ---
 const io = new Server(server, {
